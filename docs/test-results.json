@@ -2,76 +2,76 @@
   {
     "name": "Configuration atomic save, backup, import, cycles",
     "passed": true,
-    "elapsedMs": 92
+    "elapsedMs": 93
   },
   {
     "name": "Theme preference compatibility, roundtrip, validation",
     "passed": true,
-    "elapsedMs": 40
+    "elapsedMs": 46
   },
   {
     "name": "Dual-stream flood, split UTF-8, unterminated tail, export",
     "passed": true,
-    "elapsedMs": 359
+    "elapsedMs": 367
   },
   {
     "name": "Interactive input, environment, working directory",
     "passed": true,
-    "elapsedMs": 679
+    "elapsedMs": 626
   },
   {
     "name": "BAT relative path, paths with spaces, pause input",
     "passed": true,
-    "elapsedMs": 262
+    "elapsedMs": 264
   },
   {
     "name": "npm run start in isolated project",
     "passed": true,
-    "elapsedMs": 785
+    "elapsedMs": 793
   },
   {
     "name": "Process tree stop, restart, repeated launches",
     "passed": true,
-    "elapsedMs": 3950
+    "elapsedMs": 3952
   },
   {
     "name": "Root exit preserves tracked child until stop",
     "passed": true,
-    "elapsedMs": 1611
+    "elapsedMs": 1587
   },
   {
     "name": "Owner forced termination kills root and grandchild",
     "passed": true,
-    "elapsedMs": 333
+    "elapsedMs": 300
   },
   {
     "name": "Dependency order, pending startup cancellation",
     "passed": true,
-    "elapsedMs": 2496
+    "elapsedMs": 2510
   },
   {
     "name": "Startup failure surfaces and log failure kills process",
     "passed": true,
-    "elapsedMs": 14
+    "elapsedMs": 13
   },
   {
     "name": "Log retention, ANSI display, persistent history",
     "passed": true,
-    "elapsedMs": 8
+    "elapsedMs": 9
   },
   {
     "name": "Concurrent starts, bulk cancellation, blocked input stop",
     "passed": true,
-    "elapsedMs": 1470
+    "elapsedMs": 1477
   },
   {
     "name": "Auto restart stops after five consecutive exits",
     "passed": true,
-    "elapsedMs": 30920
+    "elapsedMs": 30983
   },
   {
     "name": "PowerShell and Git Bash isolated scripts",
     "passed": true,
-    "elapsedMs": 985
+    "elapsedMs": 968
   }
 ]

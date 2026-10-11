@@ -124,7 +124,10 @@ await Test("Dual-stream flood, split UTF-8, unterminated tail, export", async ()
     Assert(string.Concat(records.Where(x => x.Channel == "stderr").Select(x => x.Text)) == expectedErr.ToString(), "stderr exact match");
     Assert(records.Where(x => x.Channel == "stdout").SelectMany(x => x.RawBytes ?? []).SequenceEqual(Encoding.UTF8.GetBytes(expectedOut.ToString())), "stdout raw bytes exact match");
     var export = Path.Combine(root, "export.txt"); manager.Logs(item.Id).Export(export);
-    Assert(File.ReadAllText(export).Contains("尾部🙂无换行"), "export tail");
+    var expectedExport = string.Concat(records.Select(record =>
+        $"[{record.Time:yyyy-MM-dd HH:mm:ss.fff}] [{record.Channel}] " + record.Text
+        + (record.Text.EndsWith('\n') ? "" : Environment.NewLine)));
+    Assert(File.ReadAllText(export) == expectedExport, "export preserves every record, including split tail");
     manager.Logs(item.Id).ClearPanel(); Assert(manager.Logs(item.Id).Snapshot().Length == 0, "clear panel");
     Assert(Directory.GetFiles(manager.Logs(item.Id).DirectoryPath).Length > 0, "clear retains disk history");
 });

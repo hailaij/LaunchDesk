@@ -38,22 +38,25 @@ public sealed class ProcessManager : IAsyncDisposable
     }
     private static void Update(Runtime r, RunStatus status, string detail = "")
     { lock (r.Sync) { r.Status = status; r.Detail = detail; } }
-    public async Task StartAsync(Guid id)
+    public async Task StartAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (shuttingDown) throw new InvalidOperationException("程序正在退出。");
         ConfigurationStore.Validate(Config);
         var item = Config.Items.Single(x => x.Id == id);
         foreach (var dependency in item.Dependencies)
         {
-            await StartAsync(dependency).ConfigureAwait(false);
+            await StartAsync(dependency, cancellationToken).ConfigureAwait(false);
             if (!Snapshot(dependency).Active || Snapshot(dependency).Status != RunStatus.Running)
                 throw new InvalidOperationException("依赖未保持运行：" + Config.Items.Single(x => x.Id == dependency).Name);
         }
         var r = Get(id);
+        cancellationToken.ThrowIfCancellationRequested();
         Task readyTask;
         await r.Gate.WaitAsync().ConfigureAwait(false);
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (shuttingDown) throw new InvalidOperationException("程序正在退出。");
             if (!r.Completion.IsCompleted) readyTask = r.Ready;
             else
@@ -67,7 +70,7 @@ public sealed class ProcessManager : IAsyncDisposable
             }
         }
         finally { r.Gate.Release(); }
-        await readyTask.ConfigureAwait(false);
+        await readyTask.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
     private async Task RunSessionAsync(LaunchItem item, Runtime r, TaskCompletionSource ready, CancellationToken token)
     {
@@ -180,6 +183,33 @@ public sealed class ProcessManager : IAsyncDisposable
         try { r.Cancellation?.Cancel(); completion = r.Completion; }
         finally { r.Gate.Release(); }
         await completion.ConfigureAwait(false);
+    }
+    public async Task StartFolderAsync(Guid folderId, CancellationToken cancellationToken = default)
+    {
+        if (!Config.Folders.Any(x => x.Id == folderId)) throw new InvalidOperationException("文件夹不存在。");
+        var errors = new List<Exception>();
+        foreach (var item in Config.Items.Where(x => x.FolderId == folderId).ToArray())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try { await StartAsync(item.Id, cancellationToken).ConfigureAwait(false); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception error) { errors.Add(new Exception(item.Name + ": " + error.Message, error)); }
+        }
+        if (errors.Count > 0) throw new AggregateException(errors);
+    }
+    public async Task StopFolderAsync(Guid folderId)
+    {
+        var members = Config.Items.Where(x => x.FolderId == folderId).ToDictionary(x => x.Id);
+        var ordered = new List<Guid>(); var seen = new HashSet<Guid>();
+        void Visit(LaunchItem item)
+        {
+            if (!seen.Add(item.Id)) return;
+            foreach (var dependency in item.Dependencies)
+                if (members.TryGetValue(dependency, out var value)) Visit(value);
+            ordered.Add(item.Id);
+        }
+        foreach (var item in members.Values) Visit(item);
+        foreach (var id in ordered.AsEnumerable().Reverse()) await StopAsync(id).ConfigureAwait(false);
     }
     public async Task StartAllAsync(bool autoOnly = false)
     {

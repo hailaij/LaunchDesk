@@ -16,6 +16,8 @@ public static class Program
         var smoke = args.Length == 2 && args[0] is "--ui-smoke" or "--ui-smoke-min";
         var name = "Local\\LaunchDesk-" + WindowsIdentity.GetCurrent().User!.Value + (smoke ? "-smoke-" + Guid.NewGuid() : "");
         using var mutex = new Mutex(true, name, out var created);
+        // Installers must not replace files while the application owns managed processes.
+        using var installerGuard = smoke ? null : new Mutex(false, "Local\\LaunchDesk-InstallerGuard");
         using var activate = new EventWaitHandle(false, EventResetMode.AutoReset, name + "-activate");
         if (!created && !smoke)
         {

@@ -87,6 +87,41 @@ async Task Test(string name, Func<Task> action)
 async Task Signal(int pid)
 { using var helper = Process.Start(Self("--signal", pid.ToString()))!; await helper.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3)); }
 
+await Test("Release update stable version comparison and safe links", () =>
+{
+    var update = UpdateChecker.Parse("""{"tag_name":"v0.10.0","draft":false,"prerelease":false,"body":"notes","html_url":"https://untrusted.invalid"}""")!;
+    Assert(update.IsNewerThan(new Version(0, 2, 1)), "numeric version comparison");
+    Assert(!update.IsNewerThan(new Version(0, 10, 0, 0)), "same version is not newer");
+    Assert(!update.IsNewerThan(new Version(1, 0, 0)), "older release is not newer");
+    Assert(update.Page.AbsoluteUri == "https://github.com/hailaij/LaunchDesk/releases/tag/v0.10.0", "fixed release host");
+    Assert(update.Notes == "notes", "release notes");
+    Assert(UpdateChecker.Parse("""{"tag_name":"v2.0.0-beta","draft":false,"prerelease":true}""") is null, "skip prerelease");
+    Assert(UpdateChecker.Parse("""{"tag_name":"v2.0.0","draft":true,"prerelease":false}""") is null, "skip draft");
+    var rejected = false;
+    try { UpdateChecker.Parse("""{"tag_name":"../../invalid","draft":false,"prerelease":false}"""); }
+    catch (InvalidDataException) { rejected = true; }
+    Assert(rejected, "reject invalid tag");
+    return Task.CompletedTask;
+});
+await Test("Release update HTTP results, rate limits and cancellation", async () =>
+{
+    using var client = new HttpClient(new UpdateResponseHandler());
+    var update = await UpdateChecker.CheckAsync(client: client);
+    Assert(update?.Tag == "v0.3.0", "successful response");
+    var handler = new UpdateResponseHandler { Status = System.Net.HttpStatusCode.NotFound };
+    using var missingClient = new HttpClient(handler);
+    Assert(await UpdateChecker.CheckAsync(client: missingClient) is null, "no stable release");
+    handler.Status = System.Net.HttpStatusCode.Forbidden;
+    var limited = false;
+    try { await UpdateChecker.CheckAsync(client: missingClient); }
+    catch (HttpRequestException error) { limited = error.StatusCode == System.Net.HttpStatusCode.Forbidden; }
+    Assert(limited, "rate limit surfaced");
+    using var cancellation = new CancellationTokenSource(); cancellation.Cancel();
+    var cancelled = false;
+    try { await UpdateChecker.CheckAsync(cancellation.Token, client); }
+    catch (OperationCanceledException) { cancelled = true; }
+    Assert(cancelled, "cancelled request");
+});
 await Test("Configuration atomic save, backup, import, cycles", () =>
 {
     var item = Worker("--worker sleep"); var config = new Configuration { Items = [item] };
@@ -108,6 +143,44 @@ await Test("Theme preference compatibility, roundtrip, validation", () =>
     legacy.Preferences.Theme = "invalid";
     var threw = false; try { ConfigurationStore.Validate(legacy); } catch (InvalidDataException) { threw = true; }
     Assert(threw, "invalid theme rejected"); return Task.CompletedTask;
+});
+await Test("Folder configuration roundtrip, legacy, dissolve, validation", () =>
+{
+    var legacy = JsonSerializer.Deserialize<Configuration>("{}", ConfigurationStore.JsonOptions)!;
+    ConfigurationStore.Validate(legacy); Assert(legacy.Folders.Count == 0, "legacy folders empty");
+    var folder = new LaunchFolder { Name = "Services" }; var empty = new LaunchFolder { Name = "Empty" };
+    var item = Worker("--worker sleep"); item.FolderId = folder.Id;
+    var config = new Configuration { Folders = [folder, empty], Items = [item] };
+    var store = new ConfigurationStore(Path.Combine(root, "folders")); store.Save(config);
+    var loaded = store.Load(); Assert(loaded.Folders.Count == 2 && loaded.Items[0].FolderId == folder.Id, "folder roundtrip");
+    loaded.DissolveFolder(folder.Id); store.Save(loaded);
+    Assert(store.Load().Items[0].FolderId is null && loaded.Items[0].Id == item.Id, "dissolve keeps item");
+    loaded.Items[0].FolderId = Guid.NewGuid();
+    var threw = false; try { ConfigurationStore.Validate(loaded); } catch (InvalidDataException) { threw = true; }
+    Assert(threw, "dangling folder rejected"); return Task.CompletedTask;
+});
+await Test("Folder start, stop isolation, dependencies, cancellation", async () =>
+{
+    var folder = new LaunchFolder { Name = "Group" }; var otherFolder = new LaunchFolder { Name = "Other" };
+    var dependency = Worker("--worker sleep"); dependency.FolderId = otherFolder.Id;
+    var first = Worker("--worker sleep"); first.FolderId = folder.Id; first.Dependencies.Add(dependency.Id);
+    var second = Worker("--worker sleep"); second.FolderId = folder.Id;
+    var unrelated = Worker("--worker sleep");
+    var config = new Configuration { Folders = [folder, otherFolder], Items = [first, second, dependency, unrelated] };
+    await using var manager = new ProcessManager(config, root, Signal);
+    await manager.StartFolderAsync(folder.Id);
+    Assert(manager.Snapshot(first.Id).Active && manager.Snapshot(second.Id).Active && manager.Snapshot(dependency.Id).Active, "members and explicit dependency start");
+    Assert(!manager.Snapshot(unrelated.Id).Active, "unrelated not started");
+    await manager.StopFolderAsync(folder.Id);
+    Assert(!manager.Snapshot(first.Id).Active && !manager.Snapshot(second.Id).Active && manager.Snapshot(dependency.Id).Active, "stop only folder members");
+    first.Dependencies.Clear(); first.DelaySeconds = 5;
+    using var cancellation = new CancellationTokenSource();
+    var pending = manager.StartFolderAsync(folder.Id, cancellation.Token);
+    await Until(() => manager.Snapshot(first.Id).Active); cancellation.Cancel();
+    await manager.StopFolderAsync(folder.Id);
+    var canceled = false; try { await pending; } catch (OperationCanceledException) { canceled = true; }
+    Assert(canceled && !manager.Snapshot(first.Id).Active && !manager.Snapshot(second.Id).Active, "cancel pending batch without later launch");
+    config.DissolveFolder(folder.Id); Assert(config.Items.Count == 4 && manager.Snapshot(dependency.Id).Active, "dissolve never stops other processes");
 });
 await Test("Dual-stream flood, split UTF-8, unterminated tail, export", async () =>
 {
@@ -270,3 +343,16 @@ Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(reportPath))!);
 await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
 Console.WriteLine("Evidence: " + root);
 return results.Any(x => x.GetType().GetProperty("passed")?.GetValue(x) is false) ? 1 : 0;
+
+sealed class UpdateResponseHandler : HttpMessageHandler
+{
+    public System.Net.HttpStatusCode Status { get; set; } = System.Net.HttpStatusCode.OK;
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (request.RequestUri?.AbsoluteUri != "https://api.github.com/repos/hailaij/LaunchDesk/releases/latest"
+            || request.Headers.UserAgent.Count == 0) throw new InvalidOperationException("Unexpected update request");
+        return Task.FromResult(new HttpResponseMessage(Status)
+        { Content = new StringContent("""{"tag_name":"v0.3.0","draft":false,"prerelease":false,"body":"Release notes"}""") });
+    }
+}

@@ -8,6 +8,7 @@ public enum RunStatus { Stopped, Starting, Running, Stopping, Exited, Failed, Re
 
 public sealed class LaunchItem
 {
+    public Guid? FolderId { get; set; }
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = "新启动项";
     public LaunchKind Kind { get; set; } = LaunchKind.Batch;
@@ -36,11 +37,24 @@ public sealed class Preferences
     public int LogLimitMiB { get; set; } = 200;
 }
 
+public sealed class LaunchFolder
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = "新文件夹";
+    public override string ToString() => Name;
+}
+
 public sealed class Configuration
 {
     public int SchemaVersion { get; set; } = 1;
     public Preferences Preferences { get; set; } = new();
     public List<LaunchItem> Items { get; set; } = [];
+    public List<LaunchFolder> Folders { get; set; } = [];
+    public void DissolveFolder(Guid id)
+    {
+        Folders.RemoveAll(x => x.Id == id);
+        foreach (var item in Items.Where(x => x.FolderId == id)) item.FolderId = null;
+    }
 }
 
 public sealed class ConfigurationStore
@@ -71,17 +85,24 @@ public sealed class ConfigurationStore
         JsonSerializer.Serialize(item, JsonOptions), JsonOptions)!;
     public static void Validate(Configuration config)
     {
-        if (config.SchemaVersion != 1 || config.Preferences is null || config.Items is null)
+        if (config.SchemaVersion != 1 || config.Preferences is null || config.Items is null || config.Folders is null)
             throw new InvalidDataException("不支持的配置格式。");
         if (config.Preferences.LogDays is < 1 or > 365 || config.Preferences.LogLimitMiB is < 10 or > 10240)
             throw new InvalidDataException("日志保留范围无效。");
         if (config.Preferences.Theme is not ("System" or "Light" or "Dark"))
             throw new InvalidDataException("主题设置无效。");
+        if (config.Folders.Count > 1000 || config.Folders.Any(x => x is null || x.Id == Guid.Empty || string.IsNullOrWhiteSpace(x.Name) || x.Name.Length > 100 || x.Name.Contains('\0'))
+            || config.Folders.Select(x => x.Id).Distinct().Count() != config.Folders.Count
+            || config.Folders.Select(x => x.Name.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() != config.Folders.Count)
+            throw new InvalidDataException("文件夹名称为空、重复、过长或 ID 无效。");
         if (config.Items.Count > 1000 || config.Items.Any(x => x is null) ||
             config.Items.Select(x => x.Id).Distinct().Count() != config.Items.Count)
             throw new InvalidDataException("启动项为空、过多或 ID 重复。");
         foreach (var item in config.Items)
         {
+            if (config.Folders.Any(x => x.Id == item.Id)) throw new InvalidDataException("文件夹与启动项 ID 重复。");
+            if (item.FolderId is { } folder && !config.Folders.Any(x => x.Id == folder))
+                throw new InvalidDataException("启动项所属文件夹不存在：" + item.Name);
             if (item.Id == Guid.Empty || !Enum.IsDefined(item.Kind) || string.IsNullOrWhiteSpace(item.Name)
                 || string.IsNullOrWhiteSpace(item.Target) || item.Environment is null || item.Dependencies is null
                 || item.DelaySeconds is < 0 or > 3600 || item.StopTimeoutSeconds is < 1 or > 300)

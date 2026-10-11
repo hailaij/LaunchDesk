@@ -6,10 +6,14 @@ $publishRoot = Join-Path $outputRoot 'LaunchDesk-win-x64'
 $stageRoot = Join-Path $outputRoot ('.package-' + [guid]::NewGuid().ToString('N'))
 dotnet publish (Join-Path $projectRoot 'src/LaunchDesk.App/LaunchDesk.App.csproj') -c Release -r win-x64 --self-contained true -o $stageRoot
 if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
-foreach ($file in 'README.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md') {
+foreach ($file in 'LICENSE', 'THIRD-PARTY-NOTICES.md') {
     Copy-Item -LiteralPath (Join-Path $projectRoot $file) -Destination $stageRoot
 }
-Copy-Item -LiteralPath (Join-Path $projectRoot 'docs') -Destination $stageRoot -Recurse
+Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/user-guide.md') -Destination (Join-Path $stageRoot 'README.md')
+# Debug symbols and development evidence are not part of a user distribution.
+foreach ($symbol in (Get-ChildItem -LiteralPath $stageRoot -Filter '*.pdb' -File)) {
+    Remove-Item -LiteralPath $symbol.FullName -Force -ErrorAction Stop
+}
 $noticesRoot = Join-Path $stageRoot 'runtime-notices'
 New-Item -ItemType Directory -Path $noticesRoot -Force | Out-Null
 $assets = Get-Content -LiteralPath (Join-Path $projectRoot 'src/LaunchDesk.App/obj/project.assets.json') -Raw | ConvertFrom-Json

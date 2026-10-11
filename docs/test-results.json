@@ -1,77 +1,97 @@
 [
   {
+    "name": "Release update stable version comparison and safe links",
+    "passed": true,
+    "elapsedMs": 28
+  },
+  {
+    "name": "Release update HTTP results, rate limits and cancellation",
+    "passed": true,
+    "elapsedMs": 19
+  },
+  {
     "name": "Configuration atomic save, backup, import, cycles",
     "passed": true,
-    "elapsedMs": 93
+    "elapsedMs": 101
   },
   {
     "name": "Theme preference compatibility, roundtrip, validation",
     "passed": true,
-    "elapsedMs": 46
+    "elapsedMs": 55
+  },
+  {
+    "name": "Folder configuration roundtrip, legacy, dissolve, validation",
+    "passed": true,
+    "elapsedMs": 24
+  },
+  {
+    "name": "Folder start, stop isolation, dependencies, cancellation",
+    "passed": true,
+    "elapsedMs": 3732
   },
   {
     "name": "Dual-stream flood, split UTF-8, unterminated tail, export",
     "passed": true,
-    "elapsedMs": 367
+    "elapsedMs": 720
   },
   {
     "name": "Interactive input, environment, working directory",
     "passed": true,
-    "elapsedMs": 626
+    "elapsedMs": 751
   },
   {
     "name": "BAT relative path, paths with spaces, pause input",
     "passed": true,
-    "elapsedMs": 264
+    "elapsedMs": 316
   },
   {
     "name": "npm run start in isolated project",
     "passed": true,
-    "elapsedMs": 793
+    "elapsedMs": 1067
   },
   {
     "name": "Process tree stop, restart, repeated launches",
     "passed": true,
-    "elapsedMs": 3952
+    "elapsedMs": 4206
   },
   {
     "name": "Root exit preserves tracked child until stop",
     "passed": true,
-    "elapsedMs": 1587
+    "elapsedMs": 1726
   },
   {
     "name": "Owner forced termination kills root and grandchild",
     "passed": true,
-    "elapsedMs": 300
+    "elapsedMs": 367
   },
   {
     "name": "Dependency order, pending startup cancellation",
     "passed": true,
-    "elapsedMs": 2510
+    "elapsedMs": 2597
   },
   {
     "name": "Startup failure surfaces and log failure kills process",
     "passed": true,
-    "elapsedMs": 13
+    "elapsedMs": 36
   },
   {
     "name": "Log retention, ANSI display, persistent history",
     "passed": true,
-    "elapsedMs": 9
+    "elapsedMs": 26
   },
   {
     "name": "Concurrent starts, bulk cancellation, blocked input stop",
     "passed": true,
-    "elapsedMs": 1477
+    "elapsedMs": 1546
   },
   {
     "name": "Auto restart stops after five consecutive exits",
     "passed": true,
-    "elapsedMs": 30983
+    "elapsedMs": 31092
   },
   {
     "name": "PowerShell and Git Bash isolated scripts",
     "passed": true,
-    "elapsedMs": 968
+    "elapsedMs": 1085
   }
 ]

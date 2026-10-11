@@ -20,7 +20,7 @@ CI 额外要求零跳过。新增或删除用例必须同步这个清单计数�
 
 `tests/New-SigningFixture.ps1` 仅允许临时 GitHub-hosted Windows runner，拒绝开发电脑和
 self-hosted runner。CI 在 CurrentUser/My 创建有效期两天的临时代码签名证书，导入同一
-runner 的 CurrentUser/Root，用 Windows SDK signtool 签署测试 apphost，导出公开 CER 和
+runner 的 LocalMachine/Root，用 Windows SDK signtool 签署测试 apphost，导出公开 CER 和
 样本清单。私钥不导出到文件、不上传；CI 包装器 finally 按该证书指纹移除根证书和私钥。
 生成失败也有清理路径，runner 销毁是最后一层隔离。
 
@@ -29,8 +29,9 @@ MSBuild 参数、signing.json 或发布物。不要伪造 runner 环境变量在
 这不是绕过 Windows 信任链：生产 `AuthenticodeVerifier` 未添加接受自签名的分支。
 
 2026-10-12 云端准备阶段发现 CurrentUser Root 导入停滞；改用 Windows
-[`certutil -user -f -addstore`](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/certutil)
-在受限制的临时 runner 内完成无交互导入，并增加阶段日志与五分钟验收超时。
+[`certutil -f -addstore`](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/certutil)
+在受限制、具有管理员权限的临时 runner 的 LocalMachine/Root 中完成无交互导入；
+CurrentUser/Root 即使通过 certutil 仍会等待交互确认。增加阶段日志与五分钟验收超时。
 这不允许在开发电脑运行，也不改变生产发行者 pin 或生产验签策略。
 
 ## CI 与工程规范

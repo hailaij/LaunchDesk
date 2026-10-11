@@ -28,7 +28,7 @@ finally {
     if ($manifest -and (Test-Path -LiteralPath $manifest)) {
         $thumbprint = (Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json).thumbprint
         if ($thumbprint -notmatch '^[A-Fa-f0-9]{40}$') { throw 'Invalid test certificate cleanup identity' }
-        Remove-Item -LiteralPath "Cert:\CurrentUser\Root\$thumbprint" -Force -ErrorAction Stop
+        Remove-Item -LiteralPath "Cert:\LocalMachine\Root\$thumbprint" -Force -ErrorAction Stop
         Remove-Item -LiteralPath "Cert:\CurrentUser\My\$thumbprint" -Force -DeleteKey -ErrorAction Stop
     }
 }

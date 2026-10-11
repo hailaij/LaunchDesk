@@ -22,8 +22,8 @@ try {
     $certificatePath = Join-Path $output 'fixture.cer'
     Export-Certificate -Cert $certificate -FilePath $certificatePath | Out-Null
     Write-Host 'Signing fixture: importing disposable runner trust root'
-    # CurrentUser Root import can display an interactive Windows consent dialog on hosted runners.
-    & "$env:SystemRoot/System32/certutil.exe" -user -f -addstore Root $certificatePath
+    # CurrentUser Root import displays a consent dialog, even via certutil. Only this disposable VM is modified.
+    & "$env:SystemRoot/System32/certutil.exe" -f -addstore Root $certificatePath
     if ($LASTEXITCODE -ne 0) { throw 'Temporary fixture root import failed.' }
     $signedPath = Join-Path $output 'signed-fixture.exe'
     Copy-Item -LiteralPath $source -Destination $signedPath
@@ -38,7 +38,7 @@ try {
     $manifest
 }
 catch {
-    Remove-Item -LiteralPath "Cert:\CurrentUser\Root\$thumbprint" -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath "Cert:\LocalMachine\Root\$thumbprint" -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath "Cert:\CurrentUser\My\$thumbprint" -Force -DeleteKey -ErrorAction SilentlyContinue
     throw
 }

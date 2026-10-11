@@ -21,6 +21,7 @@ jobs:
       - name: Build
         run: dotnet build LaunchDesk.slnx -c Release --no-restore -warnaserror
       - name: Core, signed fixtures, UI and fault cleanup
+        timeout-minutes: 5
         shell: pwsh
         run: ./tests/Invoke-CiVerification.ps1
       - name: Unsigned preview package (not a trusted update release)

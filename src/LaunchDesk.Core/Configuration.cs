@@ -5,6 +5,17 @@ namespace LaunchDesk.Core;
 
 public enum LaunchKind { Batch, Executable, Command, PowerShell, Shell }
 public enum RunStatus { Stopped, Starting, Running, Stopping, Exited, Failed, Restarting }
+public enum ReadinessKind { None, Tcp, Http, Log }
+
+public sealed class ReadinessOptions
+{
+    public ReadinessKind Kind { get; set; }
+    public string Host { get; set; } = "127.0.0.1";
+    public int Port { get; set; } = 3000;
+    public string Url { get; set; } = "http://127.0.0.1:3000/";
+    public string Keyword { get; set; } = "";
+    public int TimeoutSeconds { get; set; } = 30;
+}
 
 public sealed class LaunchItem
 {
@@ -23,16 +34,20 @@ public sealed class LaunchItem
     public bool AutoRestart { get; set; }
     public bool ShowWindow { get; set; }
     public int DelaySeconds { get; set; }
+    public int StartupOrder { get; set; }
     public int StopTimeoutSeconds { get; set; } = 10;
     public string StopInput { get; set; } = "";
+    public ReadinessOptions Readiness { get; set; } = new();
 }
 
 public sealed class Preferences
 {
+    public string Language { get; set; } = "zh-CN";
     public string Theme { get; set; } = "System";
     public bool StartAtLogin { get; set; }
     public bool StartMinimized { get; set; }
     public bool MinimizeToTray { get; set; } = true;
+    public bool CheckUpdatesOnStartup { get; set; } = true;
     public int LogDays { get; set; } = 7;
     public int LogLimitMiB { get; set; } = 200;
 }
@@ -50,10 +65,41 @@ public sealed class Configuration
     public Preferences Preferences { get; set; } = new();
     public List<LaunchItem> Items { get; set; } = [];
     public List<LaunchFolder> Folders { get; set; } = [];
+    public IEnumerable<LaunchItem> StartupItems() => Items.OrderBy(x => x.StartupOrder);
+    public void Rename(Guid id, string name)
+    {
+        name = name.Trim();
+        if (name.Length is < 1 or > 100 || name.Contains('\0')) throw new InvalidDataException("名称须为 1–100 个字符。");
+        if (Folders.FirstOrDefault(x => x.Id == id) is { } folder)
+        {
+            if (Folders.Any(x => x.Id != id && x.Name.Trim().Equals(name, StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidDataException("文件夹名称重复。");
+            folder.Name = name;
+        }
+        else Items.Single(x => x.Id == id).Name = name;
+    }
     public void DissolveFolder(Guid id)
     {
         Folders.RemoveAll(x => x.Id == id);
         foreach (var item in Items.Where(x => x.FolderId == id)) item.FolderId = null;
+    }
+    public void MoveItem(Guid id, Guid? folderId, Guid? beforeId = null)
+    {
+        if (folderId is { } folder && !Folders.Any(x => x.Id == folder)) throw new InvalidOperationException("目标文件夹不存在。");
+        var item = Items.Single(x => x.Id == id);
+        if (beforeId == id) return;
+        var before = beforeId.HasValue ? Items.Single(x => x.Id == beforeId) : null;
+        if (before is not null && before.FolderId != folderId) throw new InvalidOperationException("排序目标不属于该文件夹。");
+        Items.Remove(item); item.FolderId = folderId;
+        if (before is null) Items.Add(item); else Items.Insert(Items.IndexOf(before), item);
+    }
+    public void MoveFolder(Guid id, Guid? beforeId = null)
+    {
+        var folder = Folders.Single(x => x.Id == id);
+        if (beforeId == id) return;
+        var before = beforeId.HasValue ? Folders.Single(x => x.Id == beforeId) : null;
+        Folders.Remove(folder);
+        if (before is null) Folders.Add(folder); else Folders.Insert(Folders.IndexOf(before), folder);
     }
 }
 
@@ -91,6 +137,8 @@ public sealed class ConfigurationStore
             throw new InvalidDataException("日志保留范围无效。");
         if (config.Preferences.Theme is not ("System" or "Light" or "Dark"))
             throw new InvalidDataException("主题设置无效。");
+        if (config.Preferences.Language is not ("zh-CN" or "en-US"))
+            throw new InvalidDataException("语言设置无效。");
         if (config.Folders.Count > 1000 || config.Folders.Any(x => x is null || x.Id == Guid.Empty || string.IsNullOrWhiteSpace(x.Name) || x.Name.Length > 100 || x.Name.Contains('\0'))
             || config.Folders.Select(x => x.Id).Distinct().Count() != config.Folders.Count
             || config.Folders.Select(x => x.Name.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() != config.Folders.Count)
@@ -100,12 +148,24 @@ public sealed class ConfigurationStore
             throw new InvalidDataException("启动项为空、过多或 ID 重复。");
         foreach (var item in config.Items)
         {
+            if (item.Readiness is not { } readiness || !Enum.IsDefined(readiness.Kind)
+                || readiness.TimeoutSeconds is < 1 or > 300
+                || readiness.Host is null || readiness.Url is null || readiness.Keyword is null
+                || new[] { readiness.Host, readiness.Url, readiness.Keyword }.Any(x => x.Contains('\0')))
+                throw new InvalidDataException("就绪检测配置无效：" + item.Name);
+            if (readiness.Kind == ReadinessKind.Tcp && (string.IsNullOrWhiteSpace(readiness.Host) || readiness.Port is < 1 or > 65535))
+                throw new InvalidDataException("TCP 就绪检测需要主机和有效端口。");
+            if (readiness.Kind == ReadinessKind.Http && (!Uri.TryCreate(readiness.Url, UriKind.Absolute, out var uri)
+                || uri.Scheme is not ("http" or "https") || uri.UserInfo.Length != 0))
+                throw new InvalidDataException("HTTP 就绪检测需要不含用户名密码的 http/https 地址。");
+            if (readiness.Kind == ReadinessKind.Log && (string.IsNullOrEmpty(readiness.Keyword) || readiness.Keyword.Length > 4096))
+                throw new InvalidDataException("日志就绪关键词长度须为 1–4096 个字符。");
             if (config.Folders.Any(x => x.Id == item.Id)) throw new InvalidDataException("文件夹与启动项 ID 重复。");
             if (item.FolderId is { } folder && !config.Folders.Any(x => x.Id == folder))
                 throw new InvalidDataException("启动项所属文件夹不存在：" + item.Name);
             if (item.Id == Guid.Empty || !Enum.IsDefined(item.Kind) || string.IsNullOrWhiteSpace(item.Name)
                 || string.IsNullOrWhiteSpace(item.Target) || item.Environment is null || item.Dependencies is null
-                || item.DelaySeconds is < 0 or > 3600 || item.StopTimeoutSeconds is < 1 or > 300)
+                || item.DelaySeconds is < 0 or > 3600 || item.StopTimeoutSeconds is < 1 or > 300 || item.StartupOrder is < 0 or > 9999)
                 throw new InvalidDataException("启动项配置无效：" + item.Name);
             foreach (var value in new[] { item.Name, item.Target, item.Arguments, item.WorkingDirectory, item.Interpreter, item.StopInput })
                 if (value is null || value.Contains('\0')) throw new InvalidDataException("配置包含空值或 NUL。");
@@ -155,4 +215,13 @@ public sealed class ConfigurationStore
     }
     public void Export(Configuration config, string destination) =>
         File.WriteAllText(destination, JsonSerializer.Serialize(config, JsonOptions), new System.Text.UTF8Encoding(false));
+    public string BackupNow(Configuration config)
+    {
+        Validate(config);
+        var directory = Path.Combine(Root, "backups", "manual"); Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, $"config-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.json");
+        using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        JsonSerializer.Serialize(stream, config, JsonOptions); stream.Flush(true);
+        return path;
+    }
 }

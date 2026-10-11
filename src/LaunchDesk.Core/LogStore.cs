@@ -112,6 +112,63 @@ public sealed partial class LogStore : IDisposable
             revision++;
         }
     }
+    public static (Guid Id, string Name, LogRecord Record)[] SnapshotMerged((Guid Id, string Name, LogStore Store)[] sources)
+    {
+        var queue = new PriorityQueue<(Guid Id, string Name, LogRecord Record), (DateTimeOffset Time, long Sequence)>();
+        long sequence = 0;
+        foreach (var source in sources)
+            foreach (var record in source.Store.Snapshot())
+            {
+                queue.Enqueue((source.Id, source.Name, record), (record.Time, sequence++));
+                if (queue.Count > 3000) queue.Dequeue();
+            }
+        var records = new List<(Guid Id, string Name, LogRecord Record)>();
+        while (queue.TryDequeue(out var record, out _)) records.Add(record);
+        var characters = 0; var start = records.Count;
+        while (start > 0 && characters + records[start - 1].Record.Text.Length <= 500_000)
+            characters += records[--start].Record.Text.Length;
+        return records.Skip(start).ToArray();
+    }
+    private IEnumerable<LogRecord> RetainedRecords()
+    {
+        lock (gate)
+        {
+            writer?.Flush();
+            foreach (var file in Directory.Exists(DirectoryPath) ? Directory.GetFiles(DirectoryPath, "*.jsonl").Order().ToArray() : [])
+            {
+                using var reader = new StreamReader(new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
+                while (reader.ReadLine() is { } line)
+                    yield return JsonSerializer.Deserialize<LogRecord>(line) ?? throw new InvalidDataException("日志记录无效。");
+            }
+        }
+    }
+    public static void ExportMerged((Guid Id, string Name, LogStore Store)[] sources, string destination)
+    {
+        if (sources.Any(x => Path.GetFullPath(destination).StartsWith(Path.GetFullPath(x.Store.DirectoryPath) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("导出位置不能位于原始日志目录内。");
+        // Acquire stores in a fixed order and stream the merge without loading all retained logs into memory.
+        var ordered = sources.OrderBy(x => x.Store.DirectoryPath, StringComparer.OrdinalIgnoreCase).ToArray();
+        var readers = ordered.Select(x => x.Store.RetainedRecords().GetEnumerator()).ToArray();
+        try
+        {
+            var queue = new PriorityQueue<int, (DateTimeOffset Time, int Source)>();
+            for (var i = 0; i < readers.Length; i++) if (readers[i].MoveNext()) queue.Enqueue(i, (readers[i].Current.Time, i));
+            using var output = new StreamWriter(destination, false, new UTF8Encoding(false));
+            while (queue.TryDequeue(out var index, out _))
+            {
+                var record = readers[index].Current; var source = ordered[index];
+                if (Path.GetExtension(destination).Equals(".jsonl", StringComparison.OrdinalIgnoreCase))
+                    output.WriteLine(JsonSerializer.Serialize(new { SourceId = source.Id, SourceName = source.Name, record.Time, record.Channel, record.Text, record.RawBytes }));
+                else
+                {
+                    output.Write($"[{record.Time:yyyy-MM-dd HH:mm:ss.fff}] [{source.Name}] [{record.Channel}] "); output.Write(record.Text);
+                    if (!record.Text.EndsWith('\n')) output.WriteLine();
+                }
+                if (readers[index].MoveNext()) queue.Enqueue(index, (readers[index].Current.Time, index));
+            }
+        }
+        finally { foreach (var reader in readers.Reverse()) reader.Dispose(); }
+    }
     public static string DisplayText(string value) => Ansi().Replace(value, "");
     [GeneratedRegex(@"\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\))")]
     private static partial Regex Ansi();

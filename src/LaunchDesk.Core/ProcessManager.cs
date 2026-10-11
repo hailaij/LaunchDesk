@@ -44,13 +44,23 @@ public sealed class ProcessManager : IAsyncDisposable
         if (shuttingDown) throw new InvalidOperationException("程序正在退出。");
         ConfigurationStore.Validate(Config);
         var item = Config.Items.Single(x => x.Id == id);
+        var r = Get(id);
+        if (!Snapshot(id).Active)
+        {
+            try { LaunchPreflight.Check(item); }
+            catch (Exception error)
+            {
+                Update(r, RunStatus.Failed, "启动前检查：" + error.Message);
+                try { r.Logs.Write("system", "启动前检查失败：" + error.Message + "\n"); } catch { }
+                throw;
+            }
+        }
         foreach (var dependency in item.Dependencies)
         {
             await StartAsync(dependency, cancellationToken).ConfigureAwait(false);
             if (!Snapshot(dependency).Active || Snapshot(dependency).Status != RunStatus.Running)
                 throw new InvalidOperationException("依赖未保持运行：" + Config.Items.Single(x => x.Id == dependency).Name);
         }
-        var r = Get(id);
         cancellationToken.ThrowIfCancellationRequested();
         Task readyTask;
         await r.Gate.WaitAsync().ConfigureAwait(false);
@@ -91,12 +101,19 @@ public sealed class ProcessManager : IAsyncDisposable
                     lock (r.Sync) { r.Current = native; r.Pid = native.Id; r.Started = start; r.ExitCode = null; }
                     var active = native;
                     var exit = native.WaitForExitAsync();
-                    pumps = Task.WhenAll(PumpAsync(native.Output, item.Encoding, r.Logs, "stdout"),
-                        PumpAsync(native.Error, item.Encoding, r.Logs, "stderr"));
+                    var readiness = new ReadinessMonitor(item.Readiness);
+                    pumps = Task.WhenAll(PumpAsync(native.Output, item.Encoding, r.Logs, "stdout", readiness.Observe),
+                        PumpAsync(native.Error, item.Encoding, r.Logs, "stderr", readiness.Observe));
                     _ = pumps.ContinueWith(_ => { try { active.Kill(); } catch { } },
                         CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
                     r.Logs.Write("system", $"启动 PID {native.Id}\n");
-                    Update(r, RunStatus.Running); ready.TrySetResult();
+                    if (item.Readiness.Kind != ReadinessKind.None)
+                    {
+                        Update(r, RunStatus.Starting, "等待服务就绪");
+                        await readiness.WaitAsync(exit, token).ConfigureAwait(false);
+                        r.Logs.Write("system", "服务就绪检测通过。\n");
+                    }
+                    Update(r, RunStatus.Running, item.Readiness.Kind == ReadinessKind.None ? "" : "服务已就绪"); ready.TrySetResult();
                     var cancelled = Task.Delay(Timeout.Infinite, token);
                     if (await Task.WhenAny(exit, cancelled).ConfigureAwait(false) == cancelled)
                     {
@@ -149,7 +166,7 @@ public sealed class ProcessManager : IAsyncDisposable
         catch (Exception error) { Update(r, RunStatus.Failed, error.Message); ready.TrySetException(error); }
         finally { if (token.IsCancellationRequested) Update(r, RunStatus.Stopped); ready.TrySetCanceled(); }
     }
-    private static async Task PumpAsync(Stream stream, string encoding, LogStore logs, string channel)
+    private static async Task PumpAsync(Stream stream, string encoding, LogStore logs, string channel, Action<string, string> observe)
     {
         var decoder = Encoding.GetEncoding(encoding).GetDecoder();
         var buffer = new byte[8192];
@@ -158,7 +175,9 @@ public sealed class ProcessManager : IAsyncDisposable
         {
             var count = await stream.ReadAsync(buffer).ConfigureAwait(false);
             var decoded = decoder.GetChars(buffer, 0, count, characters, 0, count == 0);
-            logs.Write(channel, new string(characters, 0, decoded), count > 0 ? buffer[..count] : null);
+            var text = new string(characters, 0, decoded);
+            logs.Write(channel, text, count > 0 ? buffer[..count] : null);
+            observe(channel, text);
             if (count == 0) return;
         }
     }
@@ -188,7 +207,7 @@ public sealed class ProcessManager : IAsyncDisposable
     {
         if (!Config.Folders.Any(x => x.Id == folderId)) throw new InvalidOperationException("文件夹不存在。");
         var errors = new List<Exception>();
-        foreach (var item in Config.Items.Where(x => x.FolderId == folderId).ToArray())
+        foreach (var item in Config.StartupItems().Where(x => x.FolderId == folderId).ToArray())
         {
             cancellationToken.ThrowIfCancellationRequested();
             try { await StartAsync(item.Id, cancellationToken).ConfigureAwait(false); }
@@ -199,7 +218,7 @@ public sealed class ProcessManager : IAsyncDisposable
     }
     public async Task StopFolderAsync(Guid folderId)
     {
-        var members = Config.Items.Where(x => x.FolderId == folderId).ToDictionary(x => x.Id);
+        var members = Config.StartupItems().Where(x => x.FolderId == folderId).ToDictionary(x => x.Id);
         var ordered = new List<Guid>(); var seen = new HashSet<Guid>();
         void Visit(LaunchItem item)
         {
@@ -215,7 +234,7 @@ public sealed class ProcessManager : IAsyncDisposable
     {
         List<Exception> errors = [];
         var generation = Volatile.Read(ref bulkGeneration);
-        foreach (var item in Config.Items.ToArray().Where(x => !autoOnly || x.AutoStart))
+        foreach (var item in Config.StartupItems().ToArray().Where(x => !autoOnly || x.AutoStart))
         {
             if (generation != Volatile.Read(ref bulkGeneration) || shuttingDown) break;
             try { await StartAsync(item.Id).ConfigureAwait(false); }
@@ -235,7 +254,7 @@ public sealed class ProcessManager : IAsyncDisposable
                 if (Config.Items.FirstOrDefault(x => x.Id == dependency) is { } value) Visit(value);
             ordered.Add(item.Id);
         }
-        foreach (var item in Config.Items.ToArray()) Visit(item);
+        foreach (var item in Config.StartupItems().ToArray()) Visit(item);
         foreach (var id in ordered.AsEnumerable().Reverse()) await StopAsync(id).ConfigureAwait(false);
     }
     public async ValueTask DisposeAsync()

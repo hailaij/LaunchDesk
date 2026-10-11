@@ -1,1 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0-windows</TargetFramework></PropertyGroup></Project>
+<Project Sdk="Microsoft.NET.Sdk">
+ <PropertyGroup><TargetFramework>net10.0-windows</TargetFramework></PropertyGroup>
+ <ItemGroup><AssemblyMetadata Include="UpdateSignerSha256" Value="$(UpdateSignerSha256)"/></ItemGroup>
+</Project>

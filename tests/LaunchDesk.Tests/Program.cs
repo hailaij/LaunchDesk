@@ -50,6 +50,21 @@ if (args.Length > 0 && args[0] != "--report")
                 using (var child = Process.Start(Self("--worker", "sleep"))!) File.WriteAllText(args[2], child.Id.ToString());
                 return 0;
             case "sleep": Thread.Sleep(Timeout.Infinite); break;
+            case "ready-log":
+                await Task.Delay(400); Console.Write("REA"); Console.Out.Flush(); await Task.Delay(100); Console.Write("DY"); Console.Out.Flush();
+                await Task.Delay(Timeout.Infinite); break;
+            case "ready-server":
+                await Task.Delay(400);
+                var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, int.Parse(args[2]));
+                listener.Start();
+                while (true)
+                {
+                    using var client = await listener.AcceptTcpClientAsync();
+                    var stream = client.GetStream(); var request = new byte[4096];
+                    if (await stream.ReadAsync(request) == 0) continue;
+                    var status = args.Length > 3 ? args[3] : "200";
+                    await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {status} Test\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK"));
+                }
             case "fail": Console.Error.Write("failure"); return 7;
         }
         return 0;
@@ -87,6 +102,282 @@ async Task Test(string name, Func<Task> action)
 async Task Signal(int pid)
 { using var helper = Process.Start(Self("--signal", pid.ToString()))!; await helper.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3)); }
 
+await Test("Language preferences round-trip without changing user data", () =>
+{
+    var config = new Configuration { Items = [new() { Name = "中文名称", Target = "中文路径", Arguments = "原始参数" }] };
+    config.Preferences.Language = "en-US";
+    var copy = JsonSerializer.Deserialize<Configuration>(JsonSerializer.Serialize(config, ConfigurationStore.JsonOptions), ConfigurationStore.JsonOptions)!;
+    Assert(copy.Preferences.Language == "en-US" && copy.Items[0].Name == "中文名称" && copy.Items[0].Arguments == "原始参数", "locale must not mutate user data");
+    Assert(JsonSerializer.Deserialize<Preferences>("{}")!.Language == "zh-CN", "legacy language default");
+    copy.Preferences.Language = "bad";
+    try { ConfigurationStore.Validate(copy); throw new Exception("invalid locale accepted"); } catch (InvalidDataException) { }
+    return Task.CompletedTask;
+});
+await Test("Installer metadata is pinned to expected GitHub asset", () =>
+{
+    var hash = new string('a', 64);
+    var json = $$"""{"tag_name":"v9.0.0","draft":false,"prerelease":false,"assets":[{"name":"LaunchDesk-v9.0.0-win-x64-setup.exe","size":42,"digest":"sha256:{{hash}}","browser_download_url":"https://evil.example/installer.exe"}]}""";
+    var release = UpdateChecker.Parse(json)!;
+    Assert(release.Installer?.DownloadUri.Host == "github.com" && release.Installer.Size == 42, "ignore untrusted metadata URLs");
+    Assert(UpdateChecker.Parse(json.Replace("sha256:", "sha1:"))!.Installer is null, "unknown digest rejected");
+    Assert(UpdateChecker.Parse(json.Replace("\"size\":42", "\"size\":0"))!.Installer is null, "empty asset rejected");
+    foreach (var url in new[] { "http://github.com/a", "https://evil.example/a", "https://github.com:444/a", "https://user@github.com/a", "https://github.com/a#fragment" })
+        try { UpdateDownloader.ValidateDownloadUri(new(url)); throw new Exception("unsafe URL accepted"); } catch (InvalidDataException) { }
+    return Task.CompletedTask;
+});
+await Test("Verified downloads require both hash and signature, failures clean up", async () =>
+{
+    var bytes = Encoding.UTF8.GetBytes("isolated fake installer, never executed");
+    var asset = new ReleaseAsset("LaunchDesk-v9.0.0-win-x64-setup.exe", bytes.Length, Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)), new Uri("https://github.com/hailaij/LaunchDesk/releases/download/v9.0.0/LaunchDesk-v9.0.0-win-x64-setup.exe"));
+    var release = new ReleaseUpdate(new(9, 0, 0), "v9.0.0", "", new Uri("https://github.com/hailaij/LaunchDesk/releases/tag/v9.0.0")) { Installer = asset };
+    var cache = Path.Combine(root, "update-cache");
+    var old = Path.Combine(root, "old-version.txt"); await File.WriteAllTextAsync(old, "unchanged");
+    var verifier = new TestSignatureVerifier();
+    using var client = new HttpClient(new DownloadResponseHandler(bytes));
+    var result = await new UpdateDownloader(client, verifier).DownloadAsync(release, cache);
+    Assert(verifier.Calls == 1 && File.ReadAllBytes(result.Path).SequenceEqual(bytes), "verified promotion");
+    foreach (var mode in new[] { "hash", "signature", "truncated", "oversized", "network", "redirect", "cancel", "midstream" })
+    {
+        var failingCache = Path.Combine(root, "download-failure-" + mode);
+        using var failingClient = new HttpClient(new DownloadResponseHandler(bytes, mode));
+        var signer = new TestSignatureVerifier { Reject = mode == "signature" };
+        var failingRelease = mode == "hash" ? release with { Installer = asset with { Sha256 = new string('0', 64) } } : release;
+        using var cancel = new CancellationTokenSource(); if (mode == "cancel") cancel.Cancel();
+        var failed = false;
+        try { await new UpdateDownloader(failingClient, signer).DownloadAsync(failingRelease, failingCache, cancellationToken: cancel.Token); }
+        catch (Exception) { failed = true; }
+        Assert(failed && (!Directory.Exists(failingCache) || !Directory.EnumerateFileSystemEntries(failingCache).Any()), mode + " rollback");
+        Assert(File.ReadAllText(old) == "unchanged", "old version unchanged");
+        if (mode == "hash") Assert(signer.Calls == 0, "hash precedes trust check");
+    }
+});
+await Test("Unconfigured publisher blocks download before network access", async () =>
+{
+    var handler = new DownloadResponseHandler([1]); using var client = new HttpClient(handler);
+    var release = new ReleaseUpdate(new(9, 0, 0), "v9.0.0", "", new Uri("https://github.com/hailaij/LaunchDesk/releases"));
+    try { await new UpdateDownloader(client, new AuthenticodeVerifier("")).DownloadAsync(release, Path.Combine(root, "unconfigured")); throw new Exception("missing publisher accepted"); }
+    catch (InvalidDataException) { }
+    Assert(handler.Calls == 0, "no network request without trust pin");
+});
+await Test("Native Windows trust rejects unsigned installer", async () =>
+{
+    var path = Path.Combine(root, "unsigned.exe"); await File.WriteAllBytesAsync(path, Encoding.UTF8.GetBytes("not a signed PE"));
+    try { new AuthenticodeVerifier(new string('0', 64)).Verify(path); throw new Exception("unsigned accepted"); }
+    catch (InvalidDataException) { }
+});
+await Test("Native Windows trust validates known publisher and rejects mismatched pin", () =>
+{
+    var path = @"D:\tool\Inno Setup 6\ISCC.exe";
+    // Optional local native fixture; production trust pins are never derived from this compiler.
+    if (!File.Exists(path)) { Console.WriteLine("SKIP native signed fixture unavailable"); return Task.CompletedTask; }
+    var pin = "4EFD84E6F1091B19321231743B9AA86482EFFD6D0BEA9F7A44DB6211154616F3";
+    Assert(new AuthenticodeVerifier(pin).Verify(path).Contains("Pyrsys", StringComparison.OrdinalIgnoreCase), "verified publisher context");
+    try { new AuthenticodeVerifier(new string('0', 64)).Verify(path); throw new Exception("wrong publisher accepted"); }
+    catch (InvalidDataException error) { Assert(error.Message.Contains("发行者"), "valid signature wrong pin"); }
+    var tampered = Path.Combine(root, "tampered-compiler.exe"); File.Copy(path, tampered);
+    using (var file = new FileStream(tampered, FileMode.Open, FileAccess.ReadWrite)) { file.Position = 512; var original = file.ReadByte(); file.Position = 512; file.WriteByte((byte)(original ^ 0xff)); }
+    try { new AuthenticodeVerifier(pin).Verify(tampered); throw new Exception("tampered file accepted"); }
+    catch (InvalidDataException) { }
+    return Task.CompletedTask;
+});
+await Test("Rename and stable startup priority preserve dependencies", async () =>
+{
+    var folder = new LaunchFolder { Name = "group" };
+    var later = Worker("--worker sleep"); later.StartupOrder = 20; later.FolderId = folder.Id;
+    var first = Worker("--worker sleep"); first.StartupOrder = 1; first.FolderId = folder.Id;
+    var tie = Worker("--worker sleep"); tie.StartupOrder = 20; tie.FolderId = folder.Id;
+    var config = new Configuration { Items = [later, first, tie], Folders = [folder] };
+    Assert(config.StartupItems().Select(x => x.Id).SequenceEqual(new[] { first.Id, later.Id, tie.Id }), "stable priority");
+    config.Rename(later.Id, "renamed"); config.Rename(folder.Id, "renamed group");
+    Assert(later.Name == "renamed" && folder.Name == "renamed group", "in-place metadata rename");
+    var invalid = false; try { config.Rename(first.Id, " "); } catch (InvalidDataException) { invalid = true; }
+    Assert(invalid && first.Name == "test", "invalid rename preserves name");
+    await using var manager = new ProcessManager(config, Path.Combine(root, "startup-priority"), Signal);
+    await manager.StartFolderAsync(folder.Id);
+    Assert(manager.Snapshot(first.Id).Started <= manager.Snapshot(later.Id).Started && manager.Snapshot(later.Id).Started <= manager.Snapshot(tie.Id).Started, "folder start priority");
+    await manager.StopAllAsync();
+    first.Dependencies = [tie.Id];
+    await manager.StartAllAsync();
+    Assert(manager.Snapshot(tie.Id).Started <= manager.Snapshot(first.Id).Started, "dependencies override numeric priority");
+    await manager.StopAllAsync();
+});
+await Test("Merged logs label sources and preserve raw exported records", () =>
+{
+    var a = Guid.NewGuid(); var b = Guid.NewGuid();
+    using var first = new LogStore(Path.Combine(root, "merged"), a, new());
+    using var second = new LogStore(Path.Combine(root, "merged"), b, new());
+    first.Write("stdout", "first\n", [1, 2]); second.Write("stderr", "second\n", [3, 4]); first.Write("stdout", "third\n");
+    (Guid Id, string Name, LogStore Store)[] sources = [(a, "A", first), (b, "B", second)];
+    var snapshot = LogStore.SnapshotMerged(sources);
+    Assert(snapshot.Select(x => x.Record.Text.Trim()).SequenceEqual(new[] { "first", "second", "third" }), "time merge");
+    var export = Path.Combine(root, "merged.jsonl"); LogStore.ExportMerged(sources, export);
+    var records = File.ReadAllLines(export).Select(x => JsonDocument.Parse(x)).ToArray();
+    try
+    {
+        Assert(records.Length == 3 && records[1].RootElement.GetProperty("SourceName").GetString() == "B", "source in export");
+        Assert(records[0].RootElement.GetProperty("RawBytes").GetBytesFromBase64().SequenceEqual(new byte[] { 1, 2 }), "raw preserved");
+    }
+    finally { foreach (var record in records) record.Dispose(); }
+    first.ClearPanel(); second.ClearPanel();
+    Assert(LogStore.SnapshotMerged(sources).Length == 0 && File.ReadAllLines(export).Length == 3, "panel clear preserves history");
+    return Task.CompletedTask;
+});
+await Test("Log URLs accept HTTP only and trim surrounding punctuation", () =>
+{
+    var text = "链接：http://127.0.0.1:4000/pro/ https://example.com/a(b))。 file:///C:/x javascript:alert(1) https://user:secret@example.com/";
+    var links = LogLinks.Find(text).ToArray();
+    Assert(links.Length == 2 && text.Substring(links[0].Start, links[0].Length) == "http://127.0.0.1:4000/pro/", "localhost link");
+    Assert(text.Substring(links[1].Start, links[1].Length) == "https://example.com/a(b)", "balanced punctuation");
+    return Task.CompletedTask;
+});
+await Test("Data migration retains config logs backups and safe locator", () =>
+{
+    var old = new ConfigurationStore(Path.Combine(root, "old-data")); var config = new Configuration { Items = [Worker("--worker sleep")] }; old.Save(config);
+    var backup = old.BackupNow(config);
+    using (var log = new LogStore(old.Root, config.Items[0].Id, config.Preferences)) log.Write("stdout", "retained\n");
+    var destination = Path.Combine(root, "new-data"); var migrated = DataLocation.CopyTo(old, config, destination);
+    Assert(migrated.Load().Items[0].Id == config.Items[0].Id && File.Exists(old.ConfigPath), "configuration and original retained");
+    Assert(File.Exists(Path.Combine(destination, Path.GetRelativePath(old.Root, backup))) && Directory.GetFiles(Path.Combine(destination, "logs"), "*.jsonl", SearchOption.AllDirectories).Length == 1, "backups and logs copied");
+    var locator = Path.Combine(root, "location.json"); DataLocation.Save(destination, locator);
+    Assert(DataLocation.Resolve(root, false, locator) == destination && DataLocation.Resolve(root, true, locator) == Path.Combine(root, "data"), "persisted location and portable precedence");
+    var failed = false; try { DataLocation.CopyTo(old, config, destination); } catch (InvalidOperationException) { failed = true; }
+    Assert(failed && migrated.Load().Items.Count == 1, "never overwrite destination");
+    failed = false; try { DataLocation.ValidateDestination(old.Root, Path.Combine(old.Root, "nested")); } catch (InvalidOperationException) { failed = true; }
+    Assert(failed, "reject recursive copy");
+    return Task.CompletedTask;
+});
+await Test("Launch preflight detects resource, interpreter and npm mistakes", () =>
+{
+    var directory = Path.Combine(root, "preflight"); Directory.CreateDirectory(directory);
+    var missing = new LaunchItem { Target = Path.Combine(directory, "missing.bat"), Kind = LaunchKind.Batch };
+    var failed = false; try { LaunchPreflight.Check(missing); } catch (FileNotFoundException) { failed = true; }
+    Assert(failed, "missing resource");
+    missing.WorkingDirectory = Path.Combine(directory, "missing"); failed = false;
+    try { LaunchPreflight.Check(missing); } catch (DirectoryNotFoundException) { failed = true; }
+    Assert(failed, "missing directory");
+    var npm = new LaunchItem { Kind = LaunchKind.Command, Target = "npm run start", WorkingDirectory = directory };
+    failed = false; try { LaunchPreflight.Check(npm); } catch (InvalidDataException) { failed = true; }
+    Assert(failed, "missing package");
+    File.WriteAllText(Path.Combine(directory, "package.json"), """{"scripts":{"test":"echo ok"}}""");
+    failed = false; try { LaunchPreflight.Check(npm); } catch (InvalidDataException error) { failed = error.Message.Contains("scripts.start"); }
+    Assert(failed, "missing npm start script");
+    File.WriteAllText(Path.Combine(directory, "package.json"), """{"scripts":{"start":"echo ok"}}"""); LaunchPreflight.Check(npm);
+    var script = Path.Combine(directory, "test.sh"); File.WriteAllText(script, "echo ok");
+    failed = false; try { LaunchPreflight.Check(new() { Kind = LaunchKind.Shell, Target = script }); } catch (InvalidOperationException) { failed = true; }
+    Assert(failed, "shell interpreter required");
+    var spaced = Path.Combine(directory, "file with space.cmd"); File.WriteAllText(spaced, "@echo ok");
+    LaunchPreflight.Check(new() { Kind = LaunchKind.Command, Target = spaced, WorkingDirectory = directory });
+    return Task.CompletedTask;
+});
+await Test("Preflight failure prevents dependency startup", async () =>
+{
+    var dependency = Worker("--worker sleep");
+    var item = new LaunchItem { Kind = LaunchKind.Batch, Target = Path.Combine(root, "not-found.cmd"), Dependencies = [dependency.Id] };
+    await using var manager = new ProcessManager(new() { Items = [dependency, item] }, Path.Combine(root, "preflight-dependencies"), Signal);
+    var failed = false;
+    try { await manager.StartAsync(item.Id); } catch (FileNotFoundException) { failed = true; }
+    Assert(failed && !manager.Snapshot(dependency.Id).Active && manager.Snapshot(item.Id).Status == RunStatus.Failed, "fail before dependency");
+});
+await Test("Manual backups retain config and survive automatic pruning", () =>
+{
+    var store = new ConfigurationStore(Path.Combine(root, "manual-backups")); var config = new Configuration { Items = [Worker("--worker sleep")] };
+    var path = store.BackupNow(config); var name = config.Items[0].Name;
+    for (var i = 0; i < 23; i++) { config.Items[0].Name = "changed" + i; store.Save(config); }
+    Assert(File.Exists(path) && ConfigurationStore.Read(path).Items[0].Name == name, "manual backup retained");
+    Assert(Directory.GetFiles(Path.Combine(store.Root, "backups"), "*.json").Length <= 20, "automatic limit intact");
+    return Task.CompletedTask;
+});
+await Test("Drag model grouping ordering and file import preserve resources", () =>
+{
+    var first = new LaunchFolder { Name = "first" }; var second = new LaunchFolder { Name = "second" };
+    var a = Worker("--worker sleep"); var b = Worker("--worker sleep"); var c = Worker("--worker sleep");
+    a.FolderId = first.Id; b.FolderId = first.Id; c.FolderId = second.Id;
+    var config = new Configuration { Folders = [first, second], Items = [a, b, c] };
+    config.MoveItem(b.Id, first.Id, a.Id); Assert(config.Items.IndexOf(b) < config.Items.IndexOf(a), "reorder");
+    config.MoveItem(a.Id, second.Id, c.Id); Assert(a.FolderId == second.Id && config.Items.IndexOf(a) < config.Items.IndexOf(c), "move group");
+    config.MoveItem(a.Id, null); Assert(a.FolderId is null, "ungroup");
+    config.MoveFolder(second.Id, first.Id); Assert(config.Folders[0] == second, "reorder groups");
+    var path = Path.Combine(root, "import.cmd"); File.WriteAllText(path, "@echo imported");
+    var imported = LaunchItemFactory.FromFile(path, first.Id);
+    Assert(imported.Kind == LaunchKind.Batch && imported.FolderId == first.Id && !imported.AutoStart && File.Exists(path), "no move or launch");
+    Assert(!LaunchItemFactory.Supports("unknown.txt"), "unsupported extension");
+    ConfigurationStore.Validate(config); return Task.CompletedTask;
+});
+await Test("Readiness legacy defaults and validation", () =>
+{
+    var legacy = JsonSerializer.Deserialize<LaunchItem>("{}", ConfigurationStore.JsonOptions)!;
+    Assert(legacy.Readiness.Kind == ReadinessKind.None, "legacy readiness disabled");
+    var item = Worker("--worker sleep"); item.Readiness = new() { Kind = ReadinessKind.Http, Url = "file:///C:/invalid" };
+    var failed = false; try { ConfigurationStore.Validate(new() { Items = [item] }); } catch (InvalidDataException) { failed = true; }
+    Assert(failed, "reject non HTTP URI");
+    item.Readiness = new() { Kind = ReadinessKind.Tcp, Port = 0 }; failed = false;
+    try { ConfigurationStore.Validate(new() { Items = [item] }); } catch (InvalidDataException) { failed = true; }
+    Assert(failed, "reject port"); return Task.CompletedTask;
+});
+await Test("Readiness waits for split current-run logs and dependencies", async () =>
+{
+    var dependency = Worker("--worker ready-log"); dependency.Readiness = new() { Kind = ReadinessKind.Log, Keyword = "READY", TimeoutSeconds = 5 };
+    var parent = Worker("--worker sleep"); parent.Dependencies = [dependency.Id];
+    await using var manager = new ProcessManager(new() { Items = [dependency, parent] }, Path.Combine(root, "ready-log"), Signal);
+    var pending = manager.StartAsync(parent.Id);
+    await Until(() => manager.Snapshot(dependency.Id).Pid.HasValue);
+    Assert(manager.Snapshot(dependency.Id).Status == RunStatus.Starting && !manager.Snapshot(parent.Id).Active, "dependent waits");
+    await pending; Assert(manager.Snapshot(parent.Id).Status == RunStatus.Running, "dependent started after match");
+    await manager.StopAllAsync();
+});
+await Test("TCP and HTTP readiness with delayed local server", async () =>
+{
+    foreach (var kind in new[] { ReadinessKind.Tcp, ReadinessKind.Http })
+    {
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); listener.Start();
+        var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port; listener.Stop();
+        var item = Worker("--worker ready-server " + port);
+        item.Readiness = new() { Kind = kind, Port = port, Url = "http://127.0.0.1:" + port + "/", TimeoutSeconds = 8 };
+        await using var manager = new ProcessManager(new() { Items = [item] }, Path.Combine(root, "ready-" + kind), Signal);
+        await manager.StartAsync(item.Id); Assert(manager.Snapshot(item.Id).Status == RunStatus.Running, "network readiness");
+        await manager.StopAllAsync();
+    }
+});
+await Test("Readiness rejects HTTP errors and early process exit", async () =>
+{
+    var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); listener.Start();
+    var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port; listener.Stop();
+    var server = Worker("--worker ready-server " + port + " 503");
+    server.Readiness = new() { Kind = ReadinessKind.Http, Url = "http://127.0.0.1:" + port + "/", TimeoutSeconds = 2 };
+    var earlyExit = Worker("--worker fail");
+    earlyExit.Readiness = new() { Kind = ReadinessKind.Log, Keyword = "NEVER", TimeoutSeconds = 10 };
+    await using var manager = new ProcessManager(new() { Items = [server, earlyExit] }, Path.Combine(root, "ready-failures"), Signal);
+    var start = manager.StartAsync(server.Id); await Until(() => manager.Snapshot(server.Id).Pid.HasValue);
+    var pid = manager.Snapshot(server.Id).Pid!.Value; var failed = false;
+    try { await start; } catch (TimeoutException) { failed = true; }
+    await Until(() => !manager.Snapshot(server.Id).Active);
+    Assert(failed && !Alive(pid), "HTTP 503 is not ready and process is cleaned");
+    failed = false;
+    try { await manager.StartAsync(earlyExit.Id); } catch (InvalidOperationException) { failed = true; }
+    await Until(() => !manager.Snapshot(earlyExit.Id).Active);
+    Assert(failed && manager.Snapshot(earlyExit.Id).Status == RunStatus.Failed, "early exit is not ready");
+});
+await Test("Readiness timeout ignores old logs and cleans process tree", async () =>
+{
+    var item = Worker("--worker sleep"); item.Readiness = new() { Kind = ReadinessKind.Log, Keyword = "OLD-READY", TimeoutSeconds = 1 };
+    await using var manager = new ProcessManager(new() { Items = [item] }, Path.Combine(root, "ready-timeout"), Signal);
+    manager.Logs(item.Id).Write("stdout", "OLD-READY\n");
+    var start = manager.StartAsync(item.Id); await Until(() => manager.Snapshot(item.Id).Pid.HasValue);
+    var pid = manager.Snapshot(item.Id).Pid!.Value; var failed = false;
+    try { await start; } catch (TimeoutException) { failed = true; }
+    await Until(() => !manager.Snapshot(item.Id).Active);
+    Assert(failed && manager.Snapshot(item.Id).Status == RunStatus.Failed && !Alive(pid), "timeout terminates process");
+});
+await Test("Stop cancels pending readiness and blocks dependent launch", async () =>
+{
+    var dependency = Worker("--worker sleep"); dependency.Readiness = new() { Kind = ReadinessKind.Log, Keyword = "NEVER", TimeoutSeconds = 30 };
+    var parent = Worker("--worker sleep"); parent.Dependencies = [dependency.Id];
+    await using var manager = new ProcessManager(new() { Items = [dependency, parent] }, Path.Combine(root, "ready-cancel"), Signal);
+    var pending = manager.StartAsync(parent.Id); await Until(() => manager.Snapshot(dependency.Id).Pid.HasValue);
+    var pid = manager.Snapshot(dependency.Id).Pid!.Value; await manager.StopAllAsync();
+    try { await pending; } catch (OperationCanceledException) { }
+    Assert(!Alive(pid) && !manager.Snapshot(parent.Id).Active && manager.Snapshot(dependency.Id).Status == RunStatus.Stopped, "cancel before dependent");
+});
 await Test("Release update stable version comparison and safe links", () =>
 {
     var update = UpdateChecker.Parse("""{"tag_name":"v0.10.0","draft":false,"prerelease":false,"body":"notes","html_url":"https://untrusted.invalid"}""")!;
@@ -354,5 +645,42 @@ sealed class UpdateResponseHandler : HttpMessageHandler
             || request.Headers.UserAgent.Count == 0) throw new InvalidOperationException("Unexpected update request");
         return Task.FromResult(new HttpResponseMessage(Status)
         { Content = new StringContent("""{"tag_name":"v0.3.0","draft":false,"prerelease":false,"body":"Release notes"}""") });
+    }
+}
+
+sealed class TestSignatureVerifier : IUpdateSignatureVerifier
+{
+    public int Calls { get; private set; }
+    public bool Reject { get; init; }
+    public string Verify(string path) { Calls++; if (Reject) throw new InvalidDataException("test signature rejection"); return "isolated test publisher"; }
+}
+sealed class DownloadResponseHandler(byte[] bytes, string mode = "") : HttpMessageHandler
+{
+    public int Calls { get; private set; }
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        Calls++; cancellationToken.ThrowIfCancellationRequested();
+        if (mode == "network") throw new HttpRequestException("isolated network failure");
+        if (mode == "redirect")
+        {
+            var redirect = new HttpResponseMessage(System.Net.HttpStatusCode.Redirect);
+            redirect.Headers.Location = new Uri("https://evil.example/installer.exe"); return Task.FromResult(redirect);
+        }
+        var payload = mode == "truncated" ? bytes[..^1] : mode == "oversized" ? bytes.Concat(new byte[] { 0 }).ToArray() : bytes;
+        HttpContent content = mode == "midstream" ? new StreamContent(new InterruptedStream(bytes)) : new ByteArrayContent(payload);
+        content.Headers.ContentLength = payload.Length;
+        return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = content });
+    }
+}
+sealed class InterruptedStream : MemoryStream
+{
+    private bool read;
+    private readonly int chunkSize;
+    public InterruptedStream(byte[] bytes) : base(bytes) { chunkSize = bytes.Length / 2; }
+    public override bool CanSeek => false;
+    public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        if (read) throw new IOException("isolated interruption after partial write");
+        read = true; return base.ReadAsync(buffer[..Math.Min(buffer.Length, chunkSize)], cancellationToken);
     }
 }

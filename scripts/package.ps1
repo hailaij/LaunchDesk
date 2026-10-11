@@ -1,15 +1,19 @@
-param([string]$OutputDirectory = 'artifacts')
+param([string]$OutputDirectory = 'artifacts', [string]$UpdateSignerSha256 = '')
 $ErrorActionPreference = 'Stop'
+if ($UpdateSignerSha256 -and $UpdateSignerSha256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'UpdateSignerSha256 must be the publisher certificate DER SHA-256 (64 hex characters).' }
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory, $projectRoot)
 $publishRoot = Join-Path $outputRoot 'LaunchDesk-win-x64'
 $stageRoot = Join-Path $outputRoot ('.package-' + [guid]::NewGuid().ToString('N'))
-dotnet publish (Join-Path $projectRoot 'src/LaunchDesk.App/LaunchDesk.App.csproj') -c Release -r win-x64 --self-contained true -o $stageRoot
+dotnet publish (Join-Path $projectRoot 'src/LaunchDesk.App/LaunchDesk.App.csproj') -c Release -r win-x64 --self-contained true -o $stageRoot "-p:UpdateSignerSha256=$UpdateSignerSha256"
 if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
-foreach ($file in 'LICENSE', 'THIRD-PARTY-NOTICES.md') {
+foreach ($file in 'LICENSE', 'THIRD-PARTY-NOTICES.md', 'PRIVACY.md') {
     Copy-Item -LiteralPath (Join-Path $projectRoot $file) -Destination $stageRoot
 }
-Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/user-guide.md') -Destination (Join-Path $stageRoot 'README.md')
+foreach ($guide in @(@('user-guide.md', 'README.md'), @('user-guide.en.md', 'README.en.md'))) {
+    $text = [IO.File]::ReadAllText((Join-Path $projectRoot ('docs/' + $guide[0]))).Replace('](../', '](')
+    [IO.File]::WriteAllText((Join-Path $stageRoot $guide[1]), $text, [Text.UTF8Encoding]::new($false))
+}
 # Debug symbols and development evidence are not part of a user distribution.
 foreach ($symbol in (Get-ChildItem -LiteralPath $stageRoot -Filter '*.pdb' -File)) {
     Remove-Item -LiteralPath $symbol.FullName -Force -ErrorAction Stop

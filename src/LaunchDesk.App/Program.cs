@@ -13,7 +13,7 @@ public static class Program
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         if (args.Length == 2 && args[0] == "--signal" && int.TryParse(args[1], out var pid))
         { var sent = NativeProcess.SendControlSignal(pid); Thread.Sleep(100); return sent ? 0 : 1; }
-        var smoke = args.Length == 2 && args[0] is "--ui-smoke" or "--ui-smoke-min";
+        var smoke = args.Length == 2 && args[0] is "--ui-smoke" or "--ui-smoke-min" or "--ui-smoke-en" or "--ui-smoke-en-min";
         var name = "Local\\LaunchDesk-" + WindowsIdentity.GetCurrent().User!.Value + (smoke ? "-smoke-" + Guid.NewGuid() : "");
         using var mutex = new Mutex(true, name, out var created);
         // Installers must not replace files while the application owns managed processes.
@@ -47,8 +47,8 @@ public static class Program
         {
             var basePath = AppContext.BaseDirectory;
             var portable = File.Exists(Path.Combine(basePath, "portable.flag"));
-            var root = smoke ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[1]))!, "ui-smoke-data")
-                : portable ? Path.Combine(basePath, "data") : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LaunchDesk");
+            var root = smoke ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[1]))!, "ui-smoke-data", Guid.NewGuid().ToString("N"))
+                : DataLocation.Resolve(basePath, portable);
             var store = new ConfigurationStore(root);
             Configuration config;
             try { config = store.Load(); }
@@ -57,14 +57,19 @@ public static class Program
                 MessageBox.Show("配置读取失败，原文件已保留。请恢复备份或修正配置后重试。\n" + error.Message, "LaunchDesk", MessageBoxButton.OK, MessageBoxImage.Error);
                 return 1;
             }
+            if (smoke && args[0].Contains("-en")) config.Preferences.Language = "en-US";
             var window = new MainWindow(store, config, portable, smoke ? args[1] : null, args.Contains("--autostart"));
-            if (smoke && args[0] == "--ui-smoke-min") { window.Width = 940; window.Height = 640; }
+            if (smoke && args[0].EndsWith("-min")) { window.Width = 940; window.Height = 640; }
             var registration = ThreadPool.RegisterWaitForSingleObject(activate, (_, _) => app.Dispatcher.BeginInvoke(window.Restore), null, -1, false);
             try { app.Run(window); } finally { registration.Unregister(null); }
             return 0;
         }
         catch (Exception error)
-        { MessageBox.Show(error.ToString(), "LaunchDesk 启动失败", MessageBoxButton.OK, MessageBoxImage.Error); return 1; }
+        {
+            if (smoke) File.WriteAllText(Path.GetFullPath(args[1]) + ".error.txt", error.ToString());
+            else MessageBox.Show(error.ToString(), "LaunchDesk 启动失败", MessageBoxButton.OK, MessageBoxImage.Error);
+            return 1;
+        }
         finally { if (created) mutex.ReleaseMutex(); }
     }
     public static async Task SignalAsync(int pid)

@@ -22,7 +22,9 @@ try {
     $certificatePath = Join-Path $output 'fixture.cer'
     Export-Certificate -Cert $certificate -FilePath $certificatePath | Out-Null
     Write-Host 'Signing fixture: importing disposable runner trust root'
-    Import-Certificate -FilePath $certificatePath -CertStoreLocation 'Cert:\CurrentUser\Root' | Out-Null
+    # CurrentUser Root import can display an interactive Windows consent dialog on hosted runners.
+    & "$env:SystemRoot/System32/certutil.exe" -user -f -addstore Root $certificatePath
+    if ($LASTEXITCODE -ne 0) { throw 'Temporary fixture root import failed.' }
     $signedPath = Join-Path $output 'signed-fixture.exe'
     Copy-Item -LiteralPath $source -Destination $signedPath
     Write-Host 'Signing fixture: signing isolated apphost'

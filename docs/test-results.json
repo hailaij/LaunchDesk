@@ -2,17 +2,22 @@
   {
     "name": "Configuration atomic save, backup, import, cycles",
     "passed": true,
-    "elapsedMs": 110
+    "elapsedMs": 99
+  },
+  {
+    "name": "Theme preference compatibility, roundtrip, validation",
+    "passed": true,
+    "elapsedMs": 44
   },
   {
     "name": "Dual-stream flood, split UTF-8, unterminated tail, export",
     "passed": true,
-    "elapsedMs": 377
+    "elapsedMs": 380
   },
   {
     "name": "Interactive input, environment, working directory",
     "passed": true,
-    "elapsedMs": 805
+    "elapsedMs": 653
   },
   {
     "name": "BAT relative path, paths with spaces, pause input",
@@ -22,51 +27,51 @@
   {
     "name": "npm run start in isolated project",
     "passed": true,
-    "elapsedMs": 885
+    "elapsedMs": 875
   },
   {
     "name": "Process tree stop, restart, repeated launches",
     "passed": true,
-    "elapsedMs": 4032
+    "elapsedMs": 4044
   },
   {
     "name": "Root exit preserves tracked child until stop",
     "passed": true,
-    "elapsedMs": 1607
+    "elapsedMs": 1624
   },
   {
     "name": "Owner forced termination kills root and grandchild",
     "passed": true,
-    "elapsedMs": 333
+    "elapsedMs": 324
   },
   {
     "name": "Dependency order, pending startup cancellation",
     "passed": true,
-    "elapsedMs": 2552
+    "elapsedMs": 2547
   },
   {
     "name": "Startup failure surfaces and log failure kills process",
     "passed": true,
-    "elapsedMs": 29
+    "elapsedMs": 43
   },
   {
     "name": "Log retention, ANSI display, persistent history",
     "passed": true,
-    "elapsedMs": 27
+    "elapsedMs": 25
   },
   {
     "name": "Concurrent starts, bulk cancellation, blocked input stop",
     "passed": true,
-    "elapsedMs": 1502
+    "elapsedMs": 1509
   },
   {
     "name": "Auto restart stops after five consecutive exits",
     "passed": true,
-    "elapsedMs": 31038
+    "elapsedMs": 30811
   },
   {
     "name": "PowerShell and Git Bash isolated scripts",
     "passed": true,
-    "elapsedMs": 1648
+    "elapsedMs": 974
   }
 ]

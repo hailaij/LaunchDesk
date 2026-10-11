@@ -98,6 +98,17 @@ await Test("Configuration atomic save, backup, import, cycles", () =>
     var threw = false; try { ConfigurationStore.Validate(config); } catch (InvalidDataException) { threw = true; }
     Assert(threw, "cycles must be rejected"); return Task.CompletedTask;
 });
+await Test("Theme preference compatibility, roundtrip, validation", () =>
+{
+    var legacy = JsonSerializer.Deserialize<Configuration>("{\"Preferences\":{\"LogDays\":7,\"LogLimitMiB\":200}}", ConfigurationStore.JsonOptions)!;
+    ConfigurationStore.Validate(legacy); Assert(legacy.Preferences.Theme == "System", "legacy defaults to system");
+    var store = new ConfigurationStore(Path.Combine(root, "themes"));
+    foreach (var theme in new[] { "System", "Light", "Dark" })
+    { legacy.Preferences.Theme = theme; store.Save(legacy); Assert(store.Load().Preferences.Theme == theme, "theme roundtrip"); }
+    legacy.Preferences.Theme = "invalid";
+    var threw = false; try { ConfigurationStore.Validate(legacy); } catch (InvalidDataException) { threw = true; }
+    Assert(threw, "invalid theme rejected"); return Task.CompletedTask;
+});
 await Test("Dual-stream flood, split UTF-8, unterminated tail, export", async () =>
 {
     var item = Worker("--worker flood"); var config = new Configuration { Items = [item] };

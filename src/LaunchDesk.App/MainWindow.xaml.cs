@@ -30,7 +30,9 @@ public sealed class ItemRow(LaunchItem item) : INotifyPropertyChanged
     public void Refresh(RuntimeSnapshot state)
     {
         Status = state.Status switch { RunStatus.Starting => "启动中", RunStatus.Running => "运行中", RunStatus.Stopping => "停止中", RunStatus.Exited => "正常退出", RunStatus.Failed => "异常退出", RunStatus.Restarting => "等待重启", _ => "未启动" };
-        StatusBrush = state.Status switch { RunStatus.Running => new SolidColorBrush(Color.FromRgb(23, 123, 89)), RunStatus.Failed => Brushes.Firebrick, RunStatus.Starting or RunStatus.Restarting or RunStatus.Stopping => Brushes.DarkGoldenrod, _ => Brushes.Gray };
+        StatusBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(state.Status switch
+        { RunStatus.Running => Theme.IsDark ? "#76D9AD" : "#13795B", RunStatus.Failed => Theme.IsDark ? "#FF9292" : "#BD3434",
+            RunStatus.Starting or RunStatus.Restarting or RunStatus.Stopping => Theme.IsDark ? "#EEC77C" : "#946400", _ => Theme.IsDark ? "#ADB4BE" : "#636B76" }));
         Pid = state.Pid?.ToString() ?? ""; ExitCode = state.ExitCode?.ToString() ?? "";
         Duration = state.Active && state.Started is { } time ? (DateTimeOffset.Now - time).ToString(@"hh\:mm\:ss") : "";
         PropertyChanged?.Invoke(this, new(null));
@@ -57,8 +59,11 @@ public partial class MainWindow : Window
         this.store = store; this.config = config; this.portable = portable; this.smokePath = smokePath; this.autostart = autostart;
         manager = new(config, store.Root, Program.SignalAsync);
         InitializeComponent();
+        Theme.Apply(config.Preferences.Theme);
+        SystemEvents.UserPreferenceChanged += SystemThemeChanged;
         ItemsGrid.ItemsSource = rows; ChannelFilter.SelectedIndex = 0;
-        ModeText.Text = portable ? "便携模式 · v0.1.0" : "用户模式 · v0.1.0";
+        var version = typeof(App).Assembly.GetName().Version!.ToString(3);
+        ModeText.Text = (portable ? "便携模式" : "用户模式") + " · v" + version;
         timer.Tick += (_, _) => { try { Refresh(); } catch (Exception error) { timer.Stop(); ShowError(error); } }; timer.Start();
         Loaded += OnLoaded;
     }
@@ -74,11 +79,27 @@ public partial class MainWindow : Window
             Populate(); ItemsGrid.SelectedIndex = 0;
             manager.Logs(config.Items[0].Id).Write("stdout", "[12:00:01] 服务已连接\n[12:00:02] 启动完成，等待任务\n");
             manager.Logs(config.Items[0].Id).Write("stderr", "[12:00:03] 测试警告：连接重试\n");
-            await Task.Delay(700); Refresh(); Capture(this, smokePath);
+            await Task.Delay(700); Theme.Apply("Light"); Refresh();
+            if (!LogBox.Text.Contains("服务已连接")) throw new InvalidOperationException("日志界面测试失败。");
+            ChannelFilter.SelectedIndex = 2;
+            if (!LogBox.Text.Contains("测试警告") || LogBox.Text.Contains("服务已连接")) throw new InvalidOperationException("通道过滤测试失败。");
+            ChannelFilter.SelectedIndex = 0; LogSearch.Text = "启动完成";
+            if (!LogBox.Text.Contains("启动完成") || LogBox.Text.Contains("测试警告")) throw new InvalidOperationException("日志搜索测试失败。");
+            LogSearch.Clear(); PauseLog.IsChecked = true;
+            var paused = LogBox.Text; manager.Logs(config.Items[0].Id).Write("stdout", "暂停期间捕获\n"); Refresh();
+            if (LogBox.Text != paused) throw new InvalidOperationException("暂停显示测试失败。");
+            PauseLog.IsChecked = false;
+            if (!LogBox.Text.Contains("暂停期间捕获")) throw new InvalidOperationException("恢复显示测试失败。");
+            Capture(this, smokePath);
             var editor = new ItemDialog(ConfigurationStore.Clone(config.Items[0]), config.Items) { Owner = this };
             editor.Show(); await Task.Delay(250); Capture(editor, Path.ChangeExtension(smokePath, null) + "-editor.png"); editor.Close();
             var settings = new SettingsDialog(config.Preferences, portable) { Owner = this };
             settings.Show(); await Task.Delay(250); Capture(settings, Path.ChangeExtension(smokePath, null) + "-settings.png"); settings.Close();
+            Theme.Apply("Dark"); Refresh(); await Task.Delay(250); Capture(this, Path.ChangeExtension(smokePath, null) + "-dark.png");
+            var darkEditor = new ItemDialog(ConfigurationStore.Clone(config.Items[0]), config.Items) { Owner = this };
+            darkEditor.Show(); await Task.Delay(250); Capture(darkEditor, Path.ChangeExtension(smokePath, null) + "-editor-dark.png"); darkEditor.Close();
+            var darkSettings = new SettingsDialog(config.Preferences, portable) { Owner = this };
+            darkSettings.Show(); await Task.Delay(250); Capture(darkSettings, Path.ChangeExtension(smokePath, null) + "-settings-dark.png"); darkSettings.Close();
             await ExitAsync(); return;
         }
         Populate(); CreateTray();
@@ -114,6 +135,8 @@ public partial class MainWindow : Window
         foreach (var item in config.Items.Where(x => ItemSearch.Text.Length == 0 ||
             x.Name.Contains(ItemSearch.Text, StringComparison.OrdinalIgnoreCase) || x.Target.Contains(ItemSearch.Text, StringComparison.OrdinalIgnoreCase))) rows.Add(new(item));
         ItemsGrid.SelectedItem = rows.FirstOrDefault(x => x.Item.Id == select) ?? rows.FirstOrDefault();
+        EmptyItems.Text = config.Items.Count == 0 ? "暂无启动项" : "没有匹配的启动项";
+        EmptyItems.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         lastRevision = -1; Refresh();
     }
     private void Refresh()
@@ -128,6 +151,7 @@ public partial class MainWindow : Window
         if (state.Detail.Length > 0) StatusText.Text = selected.Name + "：" + state.Detail;
         var logs = manager.Logs(selected.Item.Id);
         if (lastSelected != selected.Item.Id) { lastSelected = selected.Item.Id; lastRevision = -1; logs.LoadRecent(); }
+        LogBox.Opacity = PauseLog.IsChecked == true ? 0.65 : 1;
         if (PauseLog.IsChecked == true || lastRevision == logs.Revision) return;
         lastRevision = logs.Revision;
         var channel = (ChannelFilter.SelectedItem as ComboBoxItem)?.Content?.ToString();
@@ -141,7 +165,11 @@ public partial class MainWindow : Window
         var value = text.ToString();
         if (!string.IsNullOrWhiteSpace(LogSearch.Text)) value = string.Join(Environment.NewLine,
             value.Split('\n').Where(x => x.Contains(LogSearch.Text, StringComparison.OrdinalIgnoreCase)));
-        LogBox.Text = value; LogBox.ScrollToEnd();
+        var verticalOffset = LogBox.VerticalOffset;
+        var horizontalOffset = LogBox.HorizontalOffset;
+        LogBox.Text = value;
+        if (AutoScroll.IsChecked == true) LogBox.ScrollToEnd();
+        else { LogBox.ScrollToVerticalOffset(verticalOffset); LogBox.ScrollToHorizontalOffset(horizontalOffset); }
     }
     private async Task Execute(Func<Task> action)
     {
@@ -217,7 +245,7 @@ public partial class MainWindow : Window
     private void InputKeyDown(object s, KeyEventArgs e) { if (e.Key == Key.Enter) { e.Handled = true; SendInputClick(s, e); } }
     private void SelectionChanged(object s, SelectionChangedEventArgs e) { if (LogBox is not null) { lastRevision = -1; PauseLog.IsChecked = false; Refresh(); } }
     private void ItemSearchChanged(object s, TextChangedEventArgs e) { if (ItemsGrid is not null) Populate(); }
-    private void LogFilterChanged(object s, SelectionChangedEventArgs e) { if (LogBox is not null) { lastRevision = -1; Refresh(); } }
+    private void LogFilterChanged(object s, RoutedEventArgs e) { if (LogBox is not null) { lastRevision = -1; Refresh(); } }
     private void LogSearchChanged(object s, TextChangedEventArgs e) { if (LogBox is not null) { lastRevision = -1; Refresh(); } }
     private void ClearPanelClick(object s, RoutedEventArgs e) { if (Selected is { } row) { manager.Logs(row.Item.Id).ClearPanel(); Refresh(); } }
     private void DeleteHistoryClick(object s, RoutedEventArgs e)
@@ -244,7 +272,7 @@ public partial class MainWindow : Window
         if (MessageBox.Show(this, $"替换当前配置为 {imported.Items.Count} 个启动项？原配置将自动备份。导入项不会立即启动。", "导入配置", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         // Login startup is a local preference, not an imported configuration's side effect.
         imported.Preferences.StartAtLogin = config.Preferences.StartAtLogin;
-        store.Save(imported); await manager.DisposeAsync(); config = imported; manager = new(config, store.Root, Program.SignalAsync); Populate();
+        store.Save(imported); await manager.DisposeAsync(); config = imported; manager = new(config, store.Root, Program.SignalAsync); Theme.Apply(config.Preferences.Theme); Populate();
     }
     private async void ImportClick(object s, RoutedEventArgs e)
     {
@@ -263,7 +291,7 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog() != true) return;
         try
         {
-            var previous = new Preferences { StartAtLogin = config.Preferences.StartAtLogin, StartMinimized = config.Preferences.StartMinimized,
+            var previous = new Preferences { Theme = config.Preferences.Theme, StartAtLogin = config.Preferences.StartAtLogin, StartMinimized = config.Preferences.StartMinimized,
                 MinimizeToTray = config.Preferences.MinimizeToTray, LogDays = config.Preferences.LogDays, LogLimitMiB = config.Preferences.LogLimitMiB };
             var destinationRoot = dialog.Portable ? Path.Combine(AppContext.BaseDirectory, "data")
                 : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LaunchDesk");
@@ -271,6 +299,7 @@ public partial class MainWindow : Window
             if (dialog.Portable != portable && File.Exists(targetStore.ConfigPath)
                 && MessageBox.Show(this, "目标数据目录已有配置，是否备份后替换？", "切换数据目录", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
             var p = config.Preferences;
+            p.Theme = dialog.Preferences.Theme;
             p.StartAtLogin = dialog.Preferences.StartAtLogin; p.StartMinimized = dialog.Preferences.StartMinimized;
             p.MinimizeToTray = dialog.Preferences.MinimizeToTray; p.LogDays = dialog.Preferences.LogDays; p.LogLimitMiB = dialog.Preferences.LogLimitMiB;
             try
@@ -286,18 +315,24 @@ public partial class MainWindow : Window
                 if (p.StartAtLogin) run.SetValue("LaunchDesk", LaunchCommand.Quote(Environment.ProcessPath!) + " --autostart");
                 else run.DeleteValue("LaunchDesk", false);
             }
-            catch { config.Preferences.StartAtLogin = previous.StartAtLogin; config.Preferences.StartMinimized = previous.StartMinimized;
+            catch { config.Preferences.Theme = previous.Theme; config.Preferences.StartAtLogin = previous.StartAtLogin; config.Preferences.StartMinimized = previous.StartMinimized;
                 config.Preferences.MinimizeToTray = previous.MinimizeToTray; config.Preferences.LogDays = previous.LogDays; config.Preferences.LogLimitMiB = previous.LogLimitMiB;
                 store.Save(config); throw; }
             if (dialog.Portable != portable) MessageBox.Show(this, "数据目录将在重启 LaunchDesk 后切换；历史日志保留在原目录。", "设置已保存", MessageBoxButton.OK, MessageBoxImage.Information);
+            Theme.Apply(config.Preferences.Theme); Refresh();
         }
         catch (Exception error) { ShowError(error); }
     }
     private void WindowClosing(object? s, CancelEventArgs e) { if (!exiting) { e.Cancel = true; Hide(); } }
+    private void SystemThemeChanged(object sender, UserPreferenceChangedEventArgs e)
+    {
+        if (config.Preferences.Theme == "System" && !exiting)
+            Dispatcher.BeginInvoke(() => { if (!exiting) { Theme.Apply("System"); Refresh(); } });
+    }
     private void WindowStateChanged(object? s, EventArgs e) { if (WindowState == WindowState.Minimized && config.Preferences.MinimizeToTray && smokePath is null) Hide(); }
     private async Task ExitAsync()
     {
-        if (exiting) return; exiting = true; timer.Stop(); IsEnabled = false; StatusText.Text = "正在停止进程并保存日志…";
+        if (exiting) return; exiting = true; SystemEvents.UserPreferenceChanged -= SystemThemeChanged; timer.Stop(); IsEnabled = false; StatusText.Text = "正在停止进程并保存日志…";
         try { await manager.DisposeAsync(); }
         catch (Exception error) { MessageBox.Show(this, error.Message, "退出清理失败", MessageBoxButton.OK, MessageBoxImage.Error); }
         finally { tray?.Dispose(); Close(); System.Windows.Application.Current.Shutdown(); }

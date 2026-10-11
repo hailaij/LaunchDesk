@@ -28,6 +28,7 @@ public sealed class LaunchItem
 
 public sealed class Preferences
 {
+    public string Theme { get; set; } = "System";
     public bool StartAtLogin { get; set; }
     public bool StartMinimized { get; set; }
     public bool MinimizeToTray { get; set; } = true;
@@ -74,6 +75,8 @@ public sealed class ConfigurationStore
             throw new InvalidDataException("不支持的配置格式。");
         if (config.Preferences.LogDays is < 1 or > 365 || config.Preferences.LogLimitMiB is < 10 or > 10240)
             throw new InvalidDataException("日志保留范围无效。");
+        if (config.Preferences.Theme is not ("System" or "Light" or "Dark"))
+            throw new InvalidDataException("主题设置无效。");
         if (config.Items.Count > 1000 || config.Items.Any(x => x is null) ||
             config.Items.Select(x => x.Id).Distinct().Count() != config.Items.Count)
             throw new InvalidDataException("启动项为空、过多或 ID 重复。");

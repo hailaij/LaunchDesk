@@ -1,0 +1,95 @@
+# LaunchDesk
+
+Windows 启动项管理器，中文桌面界面。当前版本 **0.1.0**。
+
+![LaunchDesk](docs/images/main.png)
+
+## 功能
+
+- 管理 BAT/CMD、EXE、npm 等命令、PowerShell 和指定解释器的 Shell 脚本。
+- 独立设置参数、工作目录、环境变量、编码、启动依赖、延迟和退出输入。
+- 单项与批量启动、停止、重启；显示状态、根进程 PID、退出码和运行时长。
+- 同时捕获 stdout/stderr，实时查看、搜索、过滤、复制、清空面板与导出。
+- 原始字节保存在 JSONL 的 `RawBytes`（Base64）中，文本解码错误时仍可恢复原始输出。
+- 标准输入支持文本及回车，兼容 BAT 的 `pause`。
+- 托盘、最小化、单实例唤醒、用户登录自启、按项自启。
+- 配置导入导出、原子保存、最近 20 份自动备份、便携模式。
+
+## 运行
+
+面向 Windows 10/11 x64。自包含发布包自带 .NET 运行时，解压后运行 `LaunchDesk.exe`，请保留整个目录。
+
+首次运行为空列表，不自动添加或执行本机服务。点击添加图标创建启动项。关闭窗口会收起到托盘，彻底退出使用托盘菜单的“退出”；退出会停止全部受管进程并排空日志。
+
+应用默认以普通用户权限运行，不绕过 PowerShell 执行策略，也不自动提权。
+
+### 配置示例
+
+| 场景 | 类型 | 资源 / 命令 | 参数 | 工作目录 |
+|---|---|---|---|---|
+| BAT 启动器 | BAT / CMD | `C:\Services\Chat\launcher.bat` | 按需填写 | `C:\Services\Chat` |
+| npm 服务 | 命令（cmd） | `npm` | `run start` | `C:\Services\Bot` |
+| 可执行程序 | 可执行程序 | `C:\Tools\worker.exe` | `--port 3000` | `C:\Tools` |
+| PowerShell | PowerShell 脚本 | `C:\Scripts\worker.ps1` | 按需填写 | `C:\Scripts` |
+| Git Bash | Shell 脚本 | `C:\Scripts\worker.sh` | 按需填写 | `C:\Scripts` |
+
+BAT 未指定工作目录时，默认使用 BAT 所在目录。命令类型按 cmd 语法执行，npm 无需改成 EXE。Shell 类型必须明确指定解释器，例如 Git 的 `bin\bash.exe`；不要使用 WSL 的启动器代替 Git Bash。解释器应是可直接启动的 EXE。
+
+环境变量每行 `NAME=VALUE`；参数按所选解释器的语法填写。UTF-8 是默认编码，传统 Windows 程序可以选择 GBK。编码同时用于输出显示和标准输入；JSONL 原始字节不受该选择影响。
+
+### 数据与日志
+
+默认数据目录：`%LOCALAPPDATA%\LaunchDesk`。
+
+- `config.json`：启动项和偏好。
+- `backups\`：每次覆盖保存前的配置副本，保留 20 份。
+- `logs\<启动项ID>\`：UTF-8 JSONL 日志。
+
+设置可切换便携模式。便携模式通过 EXE 旁的 `portable.flag` 启用，数据保存至 EXE 旁的 `data\`。切换时会复制当前配置并在重启后生效；历史日志保留在原目录。目标目录需有写权限。也可以在首次运行前自行放置 `portable.flag`。
+
+日志默认每项保留 7 天、最多约 200 MiB。日志轮转时执行清理，单个记录可造成少量临时超额；不运行的旧启动项不会被后台删除日志。面板最多保留 3,000 个记录片段、约 500,000 个字符，更早的内容通过导出查看。暂停显示和清空面板均不停止捕获，也不删除落盘日志；删除历史是独立操作。
+
+导出 TXT 适合阅读；导出 JSONL 保留通道、时间与原始字节。stdout 与 stderr 各自的字节顺序保持完整，两条独立管道的交错次序按实际读取到的顺序记录，不能代表源程序的全局时间顺序。
+
+配置可能含环境变量或私人路径，请仅导入可信配置，并在公开分享前检查内容。仓库不保存本机启动配置和运行日志。
+
+### 进程生命周期
+
+根进程先挂起创建，纳入独立 Windows Job Object 后才恢复执行；子进程继承该 Job。管理器异常结束时，关闭最后一个 Job 句柄会终止关联进程。根进程退出但子进程仍存活时，该项仍显示运行中，PID 列保留根进程 PID。
+
+停止时优先发送已配置的退出输入，否则通过短生命周期助手向目标控制台发送 Ctrl+C；默认等待 10 秒，再终止整个受管进程树。依赖顺序用于进程启动，不等同于服务健康检查；批量停止按依赖的逆序进行。自动重启默认关闭，启用后间隔为 2、4、8、16 秒，连续退出 5 次暂停；持续运行超过一分钟后重置连续失败计数。日志写入失败时停止该项并报告错误。
+
+首版不包含按项提权、WSL/Docker 内部生命周期管理、Windows 服务托管或远程管理。启动器交由外部服务、已有 GUI 单实例进程或其他宿主管理的任务，可能不属于 Job 范围。GUI 程序只有实际写入 stdout/stderr 的数据可以捕获；仅写日志文件、未刷新缓冲、断电和存储故障不能承诺无损。
+
+## 开发与验证
+
+需要 .NET SDK **10.0.401** 和 Windows x64。应用没有第三方 NuGet 包依赖；发布阶段从官方 NuGet 源还原 .NET 自包含运行时包。
+
+```powershell
+dotnet build LaunchDesk.slnx -c Release
+dotnet run --project tests/LaunchDesk.Tests -c Release -- --report artifacts/test-results.json
+dotnet publish src/LaunchDesk.App -c Release -r win-x64 --self-contained true -o artifacts/LaunchDesk-win-x64
+```
+
+测试使用隔离的临时目录和可中断测试进程。覆盖双通道大量输出、UTF-8 分块、GBK、无换行尾部、原始字节、BAT 相对路径和 pause、npm、输入、环境变量、依赖、重复启停、自动重启上限、日志错误、管理器被强制结束以及后代进程清理。
+
+界面测试生成 WPF 实际布局的 PNG，覆盖标准和最小窗口尺寸、编辑窗口、设置窗口。已有三个真实服务的验收由用户暂缓，未启动或停止它们；隔离测试不代表已完成这些具体服务的实测。
+
+```powershell
+artifacts/LaunchDesk-win-x64/LaunchDesk.exe --ui-smoke artifacts/ui.png
+artifacts/LaunchDesk-win-x64/LaunchDesk.exe --ui-smoke-min artifacts/ui-minimum.png
+```
+
+`--ui-smoke` 使用独立测试数据目录，截图中的启动项不会执行。GitHub Actions 在 Windows 上构建、运行进程测试并生成自包含 ZIP。
+
+## 许可证
+
+LaunchDesk 使用 [MIT](LICENSE) 许可证。Windows/.NET 运行时按各自条款提供，详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+
+## 更新日志
+
+### 0.1.0 · 2026-10-11
+
+- 首个可运行版本：启动项管理、实时与持久日志、Job Object 进程树清理。
+- 托盘、单实例、登录自启、配置备份和便携模式。
+- 隔离进程与界面测试，自包含 Windows x64 发布包。

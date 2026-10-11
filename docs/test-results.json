@@ -1,0 +1,72 @@
+[
+  {
+    "name": "Configuration atomic save, backup, import, cycles",
+    "passed": true,
+    "elapsedMs": 110
+  },
+  {
+    "name": "Dual-stream flood, split UTF-8, unterminated tail, export",
+    "passed": true,
+    "elapsedMs": 377
+  },
+  {
+    "name": "Interactive input, environment, working directory",
+    "passed": true,
+    "elapsedMs": 805
+  },
+  {
+    "name": "BAT relative path, paths with spaces, pause input",
+    "passed": true,
+    "elapsedMs": 266
+  },
+  {
+    "name": "npm run start in isolated project",
+    "passed": true,
+    "elapsedMs": 885
+  },
+  {
+    "name": "Process tree stop, restart, repeated launches",
+    "passed": true,
+    "elapsedMs": 4032
+  },
+  {
+    "name": "Root exit preserves tracked child until stop",
+    "passed": true,
+    "elapsedMs": 1607
+  },
+  {
+    "name": "Owner forced termination kills root and grandchild",
+    "passed": true,
+    "elapsedMs": 333
+  },
+  {
+    "name": "Dependency order, pending startup cancellation",
+    "passed": true,
+    "elapsedMs": 2552
+  },
+  {
+    "name": "Startup failure surfaces and log failure kills process",
+    "passed": true,
+    "elapsedMs": 29
+  },
+  {
+    "name": "Log retention, ANSI display, persistent history",
+    "passed": true,
+    "elapsedMs": 27
+  },
+  {
+    "name": "Concurrent starts, bulk cancellation, blocked input stop",
+    "passed": true,
+    "elapsedMs": 1502
+  },
+  {
+    "name": "Auto restart stops after five consecutive exits",
+    "passed": true,
+    "elapsedMs": 31038
+  },
+  {
+    "name": "PowerShell and Git Bash isolated scripts",
+    "passed": true,
+    "elapsedMs": 1648
+  }
+]

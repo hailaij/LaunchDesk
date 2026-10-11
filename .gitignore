@@ -1,0 +1,9 @@
+**/bin/
+**/obj/
+.vs/
+artifacts/
+data/
+portable.flag
+*.user
+*.log
+*.zip

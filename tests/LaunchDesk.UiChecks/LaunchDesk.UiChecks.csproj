@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup><Resource Include="../../src/LaunchDesk.App/Assets/LaunchDesk.ico" Link="Assets/LaunchDesk.ico" /></ItemGroup>
+  <ItemGroup Condition="'$(AppBinaryDirectory)' == ''">
+    <ProjectReference Include="../../src/LaunchDesk.App/LaunchDesk.App.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(AppBinaryDirectory)' != ''">
+    <Reference Include="LaunchDesk"><HintPath>$(AppBinaryDirectory)/LaunchDesk.dll</HintPath></Reference>
+    <Reference Include="LaunchDesk.Core"><HintPath>$(AppBinaryDirectory)/LaunchDesk.Core.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

@@ -4,6 +4,13 @@ namespace LaunchDesk;
 
 internal static class UiText
 {
+    internal sealed class LabelSource : System.ComponentModel.INotifyPropertyChanged
+    {
+        public string this[string key] => T(key);
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+        public void Refresh() => PropertyChanged?.Invoke(this, new("Item[]"));
+    }
+    public static LabelSource Labels { get; } = new();
     public static string Language { get; private set; } = "zh-CN";
     private static readonly Dictionary<string, string> English = new(StringComparer.Ordinal);
     static UiText()
@@ -37,9 +44,21 @@ internal static class UiText
     {
         Language = language == "en-US" ? language : "zh-CN";
         foreach (var key in English.Keys) Application.Current.Resources[key] = T(key);
+        Labels.Refresh();
     }
     private const string Catalog = """
 语言|Language
+复制|Copy
+全选|Select all
+导出日志|Export logs
+导出完成，跳过 {0} 条损坏记录；原始日志未修改。|Export completed; skipped {0} corrupt records. Original logs were not modified.
+package.json 格式无效：|Invalid package.json:\u0020
+package.json 须为 JSON 对象：|package.json must be a JSON object:\u0020
+Ctrl+C 信号发送失败：|Ctrl+C signal failed:\u0020
+管理器已强制终止进程树（0xE04C4401）。|The manager forcibly terminated the process tree (0xE04C4401).
+输入队列等待超时。|Timed out waiting for the input queue.
+输入发送超时，已停止受管进程树以释放阻塞管道。|Input timed out. The managed process tree was stopped to release the blocked pipe.
+已从备份恢复配置：{0}\n损坏原件已保留：{1}\n本次启动不会自动启动任何启动项，请检查恢复内容。|Configuration restored from: {0}\nCorrupt original retained at: {1}\nAuto-start is disabled for this session. Please review the restored configuration.
 备注|Note
 退出输入延迟（秒）|Stop input delay (s)
 退出输入前先发送 Ctrl+C|Send Ctrl+C before stop input

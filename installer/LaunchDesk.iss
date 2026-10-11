@@ -34,6 +34,12 @@ AppMutex=Local\LaunchDesk-InstallerGuard
 CloseApplications=no
 RestartApplications=no
 UsePreviousAppDir=yes
+#ifdef SignedBuild
+SignedUninstaller=yes
+SignedUninstallerDir={#SigningDir}
+#else
+SignedUninstaller=no
+#endif
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

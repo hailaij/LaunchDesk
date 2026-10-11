@@ -2,7 +2,24 @@ namespace LaunchDesk.Core;
 
 public sealed record LaunchCommand(string FileName, string Arguments, string Directory)
 {
-    public static string Quote(string value) => "\"" + value.Replace("\"", "\\\"") + "\"";
+    public static string Quote(string value)
+    {
+        // Windows argv parsing doubles trailing slashes and slashes preceding a quote.
+        var result = new System.Text.StringBuilder("\""); var slashes = 0;
+        foreach (var character in value)
+        {
+            if (character == '\\') { slashes++; continue; }
+            result.Append('\\', character == '"' ? slashes * 2 + 1 : slashes);
+            result.Append(character); slashes = 0;
+        }
+        return result.Append('\\', slashes * 2).Append('"').ToString();
+    }
+    internal static string CommandTarget(string target, string directory)
+    {
+        // cmd uses its own quoting grammar, not the CRT argv escaping above.
+        var path = Path.IsPathRooted(target) ? target : Path.Combine(directory, target);
+        return File.Exists(path) ? "\"" + Path.GetFullPath(path) + "\"" : target;
+    }
     public static string Resolve(string name, string directory, string? pathOverride = null)
     {
         if (Path.IsPathRooted(name) || name.Contains(Path.DirectorySeparatorChar) || name.Contains('/'))
@@ -34,9 +51,9 @@ public sealed record LaunchCommand(string FileName, string Arguments, string Dir
         return item.Kind switch
         {
             LaunchKind.Batch => new(Path.Combine(System.Environment.SystemDirectory, "cmd.exe"),
-                "/d /s /c \"" + Quote(Find(target)) + (args.Length > 0 ? " " + args : "") + "\"", directory),
+                "/d /s /c \"\"" + Find(target) + "\"" + (args.Length > 0 ? " " + args : "") + "\"", directory),
             LaunchKind.Command => new(Path.Combine(System.Environment.SystemDirectory, "cmd.exe"),
-                "/d /s /c \"" + (target.Contains(' ') && File.Exists(target) ? Quote(target) : target) +
+                "/d /s /c \"" + CommandTarget(target, directory) +
                 (args.Length > 0 ? " " + args : "") + "\"", directory),
             LaunchKind.PowerShell => new(Find(string.IsNullOrWhiteSpace(item.Interpreter) ? "powershell.exe" : item.Interpreter),
                 "-NoLogo -NoProfile -File " + Quote(Find(target)) + " " + args, directory),

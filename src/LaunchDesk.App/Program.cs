@@ -12,8 +12,8 @@ public static class Program
     {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         if (args.Length == 2 && args[0] == "--signal" && int.TryParse(args[1], out var pid))
-        { var sent = NativeProcess.SendControlSignal(pid); Thread.Sleep(100); return sent ? 0 : 1; }
-        var smoke = args.Length == 2 && args[0] is "--ui-smoke" or "--ui-smoke-min" or "--ui-smoke-en" or "--ui-smoke-en-min";
+        { var sent = NativeProcess.SendControlSignal(pid, out var detail); if (!sent) Console.Error.WriteLine(detail); Thread.Sleep(100); return sent ? 0 : 1; }
+        var smoke = args.Length == 2 && args[0] is "--ui-smoke" or "--ui-smoke-min" or "--ui-smoke-en" or "--ui-smoke-en-min" or "--ui-fault-loaded" or "--ui-fault-dispatcher";
         var name = "Local\\LaunchDesk-" + WindowsIdentity.GetCurrent().User!.Value + (smoke ? "-smoke-" + Guid.NewGuid() : "");
         using var mutex = new Mutex(true, name, out var created);
         // Installers must not replace files while the application owns managed processes.
@@ -58,11 +58,17 @@ public static class Program
                 return 1;
             }
             if (smoke && args[0].Contains("-en")) config.Preferences.Language = "en-US";
+            if (store.RecoveredFrom is not null)
+            {
+                UiText.Apply(config.Preferences.Language);
+                MessageBox.Show(UiText.F("已从备份恢复配置：{0}\n损坏原件已保留：{1}\n本次启动不会自动启动任何启动项，请检查恢复内容。", store.RecoveredFrom, store.CorruptArchive ?? ""), "LaunchDesk", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
             var window = new MainWindow(store, config, portable, smoke ? args[1] : null, args.Contains("--autostart"));
+            app.ConfigureErrors(new ErrorDiagnostics(root), window);
+            if (smoke && args[0].StartsWith("--ui-fault-")) window.FaultProbe = args[0];
             if (smoke && args[0].EndsWith("-min")) { window.Width = 940; window.Height = 640; }
             var registration = ThreadPool.RegisterWaitForSingleObject(activate, (_, _) => app.Dispatcher.BeginInvoke(window.Restore), null, -1, false);
-            try { app.Run(window); } finally { registration.Unregister(null); }
-            return 0;
+            try { return app.Run(window); } finally { registration.Unregister(null); }
         }
         catch (Exception error)
         {
@@ -75,14 +81,16 @@ public static class Program
     public static async Task SignalAsync(int pid)
     {
         var path = Environment.ProcessPath!;
-        var start = new ProcessStartInfo(path) { UseShellExecute = false, CreateNoWindow = true };
+        var start = new ProcessStartInfo(path) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true };
         // Framework-dependent development launches may use the dotnet host.
         if (Path.GetFileNameWithoutExtension(path).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
             start.ArgumentList.Add(typeof(Program).Assembly.Location);
         start.ArgumentList.Add("--signal"); start.ArgumentList.Add(pid.ToString());
         using var helper = Process.Start(start) ?? throw new IOException("无法启动退出信号助手。");
+        var diagnostic = helper.StandardError.ReadToEndAsync();
         try { await helper.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2)); }
-        catch { if (!helper.HasExited) helper.Kill(); throw; }
-        if (helper.ExitCode != 0) throw new IOException("目标没有可接收 Ctrl+C 的控制台，将按超时策略停止。");
+        catch { if (!helper.HasExited) helper.Kill(); await helper.WaitForExitAsync(); await diagnostic; throw; }
+        var detail = await diagnostic;
+        if (helper.ExitCode != 0) throw new IOException("Ctrl+C 信号发送失败：" + detail.Trim());
     }
 }

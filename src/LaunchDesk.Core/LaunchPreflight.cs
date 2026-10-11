@@ -13,7 +13,7 @@ public static class LaunchPreflight
         // Complex cmd expressions belong to cmd.exe; do not reinterpret their syntax.
         if (text.IndexOfAny(['&', '|', '<', '>', '^', '%', '(', ')']) >= 0) return;
         var target = Environment.ExpandEnvironmentVariables(item.Target);
-        if (File.Exists(target)) text = LaunchCommand.Quote(target) + " " + item.Arguments;
+        text = LaunchCommand.CommandTarget(target, command.Directory) + " " + item.Arguments;
         var tokens = Regex.Matches(text, "\"([^\"]*)\"|([^\\s\"]+)")
             .Select(x => x.Groups[1].Success ? x.Groups[1].Value : x.Groups[2].Value).ToArray();
         if (tokens.Length == 0) throw new InvalidDataException("启动命令为空。");
@@ -35,7 +35,11 @@ public static class LaunchPreflight
         var packagePath = Path.Combine(directory, "package.json");
         if (!File.Exists(packagePath)) throw new InvalidDataException("npm 工作目录没有 package.json：" + directory);
         if (new FileInfo(packagePath).Length > 4 * 1024 * 1024) throw new InvalidDataException("package.json 超过 4 MiB。");
-        using var package = JsonDocument.Parse(File.ReadAllText(packagePath));
+        JsonDocument parsed;
+        try { parsed = JsonDocument.Parse(File.ReadAllText(packagePath)); }
+        catch (JsonException error) { throw new InvalidDataException("package.json 格式无效：" + packagePath + "；" + error.Message, error); }
+        using var package = parsed;
+        if (package.RootElement.ValueKind != JsonValueKind.Object) throw new InvalidDataException("package.json 须为 JSON 对象：" + packagePath);
         var exists = package.RootElement.TryGetProperty("scripts", out var scripts) && scripts.ValueKind == JsonValueKind.Object
             && scripts.TryGetProperty(script, out var entry) && entry.ValueKind == JsonValueKind.String;
         if (!exists && tokens.Contains("--if-present")) return;

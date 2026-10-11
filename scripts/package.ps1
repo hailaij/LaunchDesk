@@ -7,6 +7,10 @@ $publishRoot = Join-Path $outputRoot 'LaunchDesk-win-x64'
 $stageRoot = Join-Path $outputRoot ('.package-' + [guid]::NewGuid().ToString('N'))
 dotnet publish (Join-Path $projectRoot 'src/LaunchDesk.App/LaunchDesk.App.csproj') -c Release -r win-x64 --self-contained true -o $stageRoot "-p:UpdateSignerSha256=$UpdateSignerSha256"
 if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
+dotnet build (Join-Path $projectRoot 'tools/LaunchDesk.ReleaseChecks/LaunchDesk.ReleaseChecks.csproj') -c Release
+if ($LASTEXITCODE -ne 0) { throw 'Release verification tool build failed.' }
+& (Join-Path $projectRoot 'tools/LaunchDesk.ReleaseChecks/bin/Release/net10.0-windows/LaunchDesk.ReleaseChecks.exe') --embedded-pin (Join-Path $stageRoot 'LaunchDesk.Core.dll') $UpdateSignerSha256
+if ($LASTEXITCODE -ne 0) { throw 'Published assembly publisher pin mismatch.' }
 foreach ($file in 'LICENSE', 'THIRD-PARTY-NOTICES.md', 'PRIVACY.md') {
     Copy-Item -LiteralPath (Join-Path $projectRoot $file) -Destination $stageRoot
 }

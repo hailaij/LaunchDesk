@@ -1,0 +1,10 @@
+{
+  "certificateSha256": "",
+  "certificatePath": "",
+  "signPathOrganizationId": "",
+  "signPathProjectSlug": "",
+  "signPathPolicySlug": "",
+  "signPathAppConfigurationSlug": "",
+  "signPathUninstallerConfigurationSlug": "",
+  "signPathInstallerConfigurationSlug": ""
+}

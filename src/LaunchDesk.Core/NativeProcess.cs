@@ -8,6 +8,7 @@ namespace LaunchDesk.Core;
 
 public sealed class NativeProcess : IDisposable
 {
+    public const int ForcedExitCode = unchecked((int)0xE04C4401);
     private SafeKernelHandle? job;
     private Process? process;
     public Stream Output { get; private set; } = Stream.Null;
@@ -15,6 +16,7 @@ public sealed class NativeProcess : IDisposable
     public Stream Input { get; private set; } = Stream.Null;
     public int Id => process!.Id;
     public int ExitCode => process!.ExitCode;
+    public bool ForcedTermination { get; private set; }
     private bool disposed;
 
     public NativeProcess(LaunchItem item)
@@ -100,15 +102,25 @@ public sealed class NativeProcess : IDisposable
     }
     public void Kill()
     {
-        if (job is { IsClosed: false, IsInvalid: false }) Check(TerminateJobObject(job, 1));
+        if (job is { IsClosed: false, IsInvalid: false })
+        { Check(TerminateJobObject(job, unchecked((uint)ForcedExitCode))); ForcedTermination = true; }
     }
     public void CloseInput() { try { Input.Dispose(); } catch (IOException) { } }
-    public static bool SendControlSignal(int pid)
+    public static bool SendControlSignal(int pid) => SendControlSignal(pid, out _);
+    public static bool SendControlSignal(int pid, out string detail)
     {
-        if (!AttachConsole((uint)pid)) return false;
-        try { SetConsoleCtrlHandler(IntPtr.Zero, true); return GenerateConsoleCtrlEvent(0, 0); }
+        detail = "";
+        if (!AttachConsole((uint)pid)) { detail = ControlError("AttachConsole"); return false; }
+        try
+        {
+            if (!SetConsoleCtrlHandler(IntPtr.Zero, true)) { detail = ControlError("SetConsoleCtrlHandler"); return false; }
+            if (!GenerateConsoleCtrlEvent(0, 0)) { detail = ControlError("GenerateConsoleCtrlEvent"); return false; }
+            return true;
+        }
         finally { FreeConsole(); }
     }
+    private static string ControlError(string operation)
+    { var code = Marshal.GetLastWin32Error(); return $"{operation} Win32={code}: {new Win32Exception(code).Message}"; }
     public void Dispose()
     {
         if (disposed) return; disposed = true;
@@ -161,6 +173,6 @@ public sealed class NativeProcess : IDisposable
     [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr handle);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool AttachConsole(uint pid);
     [DllImport("kernel32.dll")] private static extern bool FreeConsole();
-    [DllImport("kernel32.dll")] private static extern bool SetConsoleCtrlHandler(IntPtr handler, bool add);
-    [DllImport("kernel32.dll")] private static extern bool GenerateConsoleCtrlEvent(uint signal, uint group);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetConsoleCtrlHandler(IntPtr handler, bool add);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GenerateConsoleCtrlEvent(uint signal, uint group);
 }

@@ -12,6 +12,16 @@ Each item has its own resource, arguments, working directory, environment variab
 
 Item notes appear to the right, immediately before the run button. Long notes are truncated with a full-text tooltip and are included in item search. Double-click a note (including an empty cell) to edit inline; Enter or focus loss saves, Esc cancels. Column sorting is disabled to keep folder members below their headers; use drag-and-drop or the up/down buttons to reorder.
 
+Working-tree reliability fixes: corrupt configuration recovers the newest valid automatic/manual backup, archives the original and disables auto-start for that session. Invalid backups and future schemas never overwrite the original. Idle history cleanup runs at startup and hourly; locked files are deferred with bounded in-memory diagnostics. Genuine log write failures still stop managed processes. Exports use captured per-file lengths and exclude subsequent appends without holding the writer lock throughout export.
+
+v0.6.0: Log rows are recycled and only visible rows are laid out. Visible text supports character selection; row selection and Ctrl+A/copy include off-screen rows. Retained row selections and reading positions follow the rolling history window. Pause for uninterrupted inspection, and scroll horizontally for long lines. Virtualization does not alter disk records or exports. A single extremely long line still has layout costs; this is not a real-time guarantee.
+
+Corrupt history records are skipped on load/export. Exports report the skipped count without modifying source files, and write a temporary file before replacing the destination; failure preserves an existing export. Deleted items release runtimes and file writers without deleting history. Forced tree termination uses 0xE04C4401 and is logged separately; an already-exited root retains its actual exit code.
+
+Refresh failures are diagnosed and retried on the next tick. Fatal loading/dispatcher errors stop managed processes before exiting; unobserved task errors are recorded. Diagnostics live in the current data directory at `diagnostics/errors.log`, rotate at approximately 2 MiB and retain three older files. Diagnostic writes cannot be guaranteed if the disk is unavailable.
+
+Input writes have an approximately two-second timeout. If a target does not read stdin, the managed tree is stopped to release the underlying blocked pipe before reporting failure. Input queue waits also time out after two seconds; a queue timeout alone does not stop the process.
+
 Stop input delay accepts 0-300 seconds (default 0). For npm/BAT termination confirmation, enable **Send Ctrl+C before stop input**, enter Y, and set a delay such as 2 seconds. Stop timeout starts after sending input; early process exit skips any remaining delay and input. This is a fixed delay, not prompt detection. Without the checkbox, stop input is sent without a signal, preserving quit/exit commands. With no stop input, Ctrl+C is sent as before.
 
 Preflight checks validate paths, interpreters and simple npm scripts without executing commands. They also run before actual startup. Complex cmd expressions only receive basic checks. Passing preflight cannot guarantee the underlying service will succeed.

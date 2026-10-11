@@ -20,16 +20,84 @@ public sealed class ProcessManager : IAsyncDisposable
         public Task Completion = Task.CompletedTask;
         public Task Ready = Task.CompletedTask;
         public NativeProcess? Current;
+        public volatile bool Retired;
     }
     private readonly ConcurrentDictionary<Guid, Runtime> runtimes = new();
+    private readonly object registryGate = new();
     private readonly string root;
     private readonly Func<int, Task> signal;
     public Configuration Config { get; }
     private volatile bool shuttingDown;
+    private Task? disposal;
     private int bulkGeneration;
+    private readonly CancellationTokenSource maintenanceCancellation = new();
+    private readonly Task maintenance;
+    private readonly ConcurrentQueue<string> maintenanceWarnings = new();
+    public string[] MaintenanceWarnings => maintenanceWarnings.ToArray();
     public ProcessManager(Configuration config, string root, Func<int, Task>? signal = null)
-    { Config = config; this.root = root; this.signal = signal ?? (_ => Task.CompletedTask); }
-    private Runtime Get(Guid id) => runtimes.GetOrAdd(id, key => new(new LogStore(root, key, Config.Preferences)));
+    {
+        Config = config; this.root = root; this.signal = signal ?? (_ => Task.CompletedTask);
+        maintenance = Task.Run(async () =>
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromHours(1));
+            try { do { MaintainLogs(); } while (await timer.WaitForNextTickAsync(maintenanceCancellation.Token).ConfigureAwait(false)); }
+            catch (OperationCanceledException) when (maintenanceCancellation.IsCancellationRequested) { }
+        });
+    }
+    public void MaintainLogs()
+    {
+        void Warn(string message) { maintenanceWarnings.Enqueue(message); while (maintenanceWarnings.Count > 20) maintenanceWarnings.TryDequeue(out _); }
+        try
+        {
+            var directory = Path.Combine(root, "logs");
+            if (!Directory.Exists(directory) || (File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0) return;
+            foreach (var path in Directory.GetDirectories(directory))
+            {
+                if (!Guid.TryParseExact(Path.GetFileName(path), "N", out var id)) continue;
+                if (runtimes.TryGetValue(id, out var runtime)) runtime.Logs.Maintain();
+                else LogStore.CleanupDirectory(path, Config.Preferences, warn: Warn);
+            }
+        }
+        catch (IOException error) { Warn(error.Message); }
+        catch (UnauthorizedAccessException error) { Warn(error.Message); }
+    }
+    private Runtime Get(Guid id)
+    {
+        lock (registryGate)
+        {
+            if (runtimes.TryGetValue(id, out var runtime)) return runtime;
+            if (shuttingDown) throw new ObjectDisposedException(nameof(ProcessManager));
+            if (!Config.Items.Any(x => x.Id == id)) throw new KeyNotFoundException("启动项不存在。");
+            runtime = new(new LogStore(root, id, Config.Preferences)); runtimes[id] = runtime; return runtime;
+        }
+    }
+    public async Task RemoveRuntimeAsync(Guid id)
+    {
+        Runtime? runtime;
+        lock (registryGate)
+        {
+            if (Config.Items.Any(x => x.Id == id)) throw new InvalidOperationException("请先删除启动项配置。");
+            if (!runtimes.TryGetValue(id, out runtime)) return;
+        }
+        await runtime.Gate.WaitAsync().ConfigureAwait(false);
+        try { runtime.Retired = true; runtime.Cancellation?.Cancel(); }
+        finally { runtime.Gate.Release(); }
+        await runtime.Completion.ConfigureAwait(false);
+        await runtime.InputGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            try { runtime.Logs.Dispose(); }
+            finally
+            {
+                await runtime.Gate.WaitAsync().ConfigureAwait(false);
+                try { runtime.Cancellation?.Dispose(); runtime.Cancellation = null; }
+                finally { runtime.Gate.Release(); }
+                lock (registryGate) runtimes.TryRemove(new KeyValuePair<Guid, Runtime>(id, runtime));
+            }
+        }
+        finally { runtime.InputGate.Release(); }
+        // Gates have no OS wait handles; leave them valid for already queued callers until the runtime is collected.
+    }
     public LogStore Logs(Guid id) => Get(id).Logs;
     public RuntimeSnapshot Snapshot(Guid id)
     {
@@ -68,6 +136,7 @@ public sealed class ProcessManager : IAsyncDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (shuttingDown) throw new InvalidOperationException("程序正在退出。");
+            if (r.Retired) throw new ObjectDisposedException("启动项已删除。");
             if (!r.Completion.IsCompleted) readyTask = r.Ready;
             else
             {
@@ -92,6 +161,7 @@ public sealed class ProcessManager : IAsyncDisposable
             {
                 NativeProcess? native = null;
                 Task? pumps = null;
+                Task? exit = null;
                 var start = DateTimeOffset.Now;
                 var exitCode = -1;
                 Exception? failure = null;
@@ -100,7 +170,7 @@ public sealed class ProcessManager : IAsyncDisposable
                     native = new NativeProcess(item);
                     lock (r.Sync) { r.Current = native; r.Pid = native.Id; r.Started = start; r.ExitCode = null; }
                     var active = native;
-                    var exit = native.WaitForExitAsync();
+                    exit = native.WaitForExitAsync();
                     var readiness = new ReadinessMonitor(item.Readiness);
                     pumps = Task.WhenAll(PumpAsync(native.Output, item.Encoding, r.Logs, "stdout", readiness.Observe),
                         PumpAsync(native.Error, item.Encoding, r.Logs, "stderr", readiness.Observe));
@@ -132,7 +202,7 @@ public sealed class ProcessManager : IAsyncDisposable
                             }
                             if (!exit.IsCompleted)
                             {
-                                try { await SendInputAsync(item.Id, item.StopInput).WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false); }
+                                try { await SendInputAsync(item.Id, item.StopInput).ConfigureAwait(false); }
                                 catch (Exception error) { r.Logs.Write("system", "退出输入发送失败：" + error.Message + "\n"); }
                             }
                         }
@@ -143,12 +213,14 @@ public sealed class ProcessManager : IAsyncDisposable
                     native.CloseInput();
                     await pumps.ConfigureAwait(false);
                     exitCode = native.ExitCode;
+                    if (native.ForcedTermination) r.Logs.Write("system", "管理器已强制终止进程树（0xE04C4401）。\n");
                     r.Logs.Write("system", $"退出码 {exitCode}\n");
                 }
                 catch (Exception error)
                 {
                     failure = error;
                     try { native?.Kill(); } catch { }
+                    if (exit is not null) { try { await exit.ConfigureAwait(false); } catch { } }
                     if (pumps is not null) { try { await pumps.ConfigureAwait(false); } catch { } }
                     try { r.Logs.Write("system", "运行失败：" + error.Message + "\n"); } catch { }
                     ready.TrySetException(error);
@@ -191,21 +263,41 @@ public sealed class ProcessManager : IAsyncDisposable
     }
     public async Task SendInputAsync(Guid id, string text)
     {
-        var r = Get(id); await r.InputGate.WaitAsync().ConfigureAwait(false);
+        var r = Get(id);
+        if (!await r.InputGate.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false)) throw new IOException("输入队列等待超时。");
         try
         {
+            if (r.Retired) throw new ObjectDisposedException("启动项已删除。");
             NativeProcess native;
             lock (r.Sync) native = r.Current ?? throw new InvalidOperationException("启动项未运行。");
             var encoding = Config.Items.Single(x => x.Id == id).Encoding;
             var bytes = Encoding.GetEncoding(encoding).GetBytes(text + "\r\n");
-            await native.Input.WriteAsync(bytes).ConfigureAwait(false); await native.Input.FlushAsync().ConfigureAwait(false);
+            async Task WriteAndFlushAsync()
+            {
+                await native.Input.WriteAsync(bytes).ConfigureAwait(false);
+                await native.Input.FlushAsync().ConfigureAwait(false);
+            }
+            var write = WriteAndFlushAsync();
+            if (await Task.WhenAny(write, Task.Delay(TimeSpan.FromSeconds(2))).ConfigureAwait(false) != write)
+            {
+                // Anonymous pipes use synchronous OS handles: cancellation alone cannot abort a blocked write.
+                r.Cancellation?.Cancel(); native.Kill();
+                try { await write.ConfigureAwait(false); } catch (IOException) { }
+                throw new IOException("输入发送超时，已停止受管进程树以释放阻塞管道。");
+            }
+            await write.ConfigureAwait(false);
             r.Logs.Write("stdin", text + "\n");
         }
         finally { r.InputGate.Release(); }
     }
     public async Task StopAsync(Guid id)
     {
-        var r = Get(id); Task completion;
+        if (!runtimes.TryGetValue(id, out var r)) return;
+        await StopRuntimeAsync(r).ConfigureAwait(false);
+    }
+    private static async Task StopRuntimeAsync(Runtime r)
+    {
+        Task completion;
         await r.Gate.WaitAsync().ConfigureAwait(false);
         try { r.Cancellation?.Cancel(); completion = r.Completion; }
         finally { r.Gate.Release(); }
@@ -264,10 +356,38 @@ public sealed class ProcessManager : IAsyncDisposable
         }
         foreach (var item in Config.StartupItems().ToArray()) Visit(item);
         foreach (var id in ordered.AsEnumerable().Reverse()) await StopAsync(id).ConfigureAwait(false);
+        foreach (var runtime in runtimes.Values) await StopRuntimeAsync(runtime).ConfigureAwait(false);
     }
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
+    { lock (registryGate) return new(disposal ??= DisposeCoreAsync()); }
+    private async Task DisposeCoreAsync()
     {
-        shuttingDown = true; await StopAllAsync().ConfigureAwait(false);
-        foreach (var runtime in runtimes.Values) { runtime.Logs.Dispose(); runtime.Cancellation?.Dispose(); }
+        shuttingDown = true;
+        var errors = new List<Exception>();
+        try
+        {
+            maintenanceCancellation.Cancel();
+            await maintenance.ConfigureAwait(false);
+            await StopAllAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            maintenanceCancellation.Dispose();
+            foreach (var runtime in runtimes.Values)
+            {
+                try { await StopRuntimeAsync(runtime).ConfigureAwait(false); }
+                catch (Exception error) { errors.Add(error); }
+                finally
+                {
+                    try { runtime.Logs.Dispose(); }
+                    catch (Exception error) { errors.Add(error); }
+                    await runtime.Gate.WaitAsync().ConfigureAwait(false);
+                    try { runtime.Cancellation?.Dispose(); runtime.Cancellation = null; runtime.Retired = true; }
+                    finally { runtime.Gate.Release(); }
+                }
+            }
+            runtimes.Clear();
+        }
+        if (errors.Count > 0) throw new AggregateException(errors);
     }
 }

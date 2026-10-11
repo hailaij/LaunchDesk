@@ -1,7 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms><StartupObject>LaunchDesk.Program</StartupObject><AssemblyName>LaunchDesk</AssemblyName><ApplicationManifest>app.manifest</ApplicationManifest></PropertyGroup>
   <PropertyGroup><ApplicationIcon>Assets/LaunchDesk.ico</ApplicationIcon><Product>LaunchDesk</Product><Title>LaunchDesk</Title><Description>LaunchDesk Windows launcher</Description></PropertyGroup>
+  <PropertyGroup><RuntimeIdentifiers>win-x64</RuntimeIdentifiers></PropertyGroup>
   <ItemGroup><Resource Include="Assets/LaunchDesk.ico" /></ItemGroup>
   <ItemGroup><ProjectReference Include="../LaunchDesk.Core/LaunchDesk.Core.csproj" /></ItemGroup>
   <ItemGroup><Using Remove="System.Windows.Forms" /><Using Remove="System.Drawing" /><Using Remove="System.IO" /><Using Include="System.IO" /></ItemGroup>
+  <Target Name="GenerateVersionedManifest" BeforeTargets="PrepareForBuild">
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/app.manifest" DestinationFiles="$(IntermediateOutputPath)app.versioned.manifest" />
+    <XmlPoke XmlInputPath="$(IntermediateOutputPath)app.versioned.manifest" Query="/asm:assembly/asm:assemblyIdentity/@version" Value="$(Version).0" Namespaces="&lt;Namespace Prefix='asm' Uri='urn:schemas-microsoft-com:asm.v1' /&gt;" />
+    <PropertyGroup><ApplicationManifest>$(IntermediateOutputPath)app.versioned.manifest</ApplicationManifest></PropertyGroup>
+  </Target>
 </Project>

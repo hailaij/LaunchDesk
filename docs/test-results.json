@@ -1,97 +1,659 @@
 [
   {
-    "name": "Release update stable version comparison and safe links",
+    "name": "Reliability: 10 MiB retention keeps small recent history",
+    "status": "passed",
+    "elapsedMs": 47,
+    "error": null,
+    "reason": null,
     "passed": true,
-    "elapsedMs": 28
+    "skipped": false
+  },
+  {
+    "name": "Reliability: locked expired history does not fail writes",
+    "status": "passed",
+    "elapsedMs": 7,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Reliability: corrupt config recovers newest valid backup",
+    "status": "passed",
+    "elapsedMs": 70,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Reliability: export iterator does not block log writer",
+    "status": "passed",
+    "elapsedMs": 9,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Reliability: UI snapshot independent of disk lock",
+    "status": "passed",
+    "elapsedMs": 4,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Reliability: invalid backups preserve original, future schema not downgraded",
+    "status": "passed",
+    "elapsedMs": 21,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Reliability: export snapshot bounded across writes and history deletion",
+    "status": "passed",
+    "elapsedMs": 5,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Reliability: size pruning keeps newest history, protects active writer",
+    "status": "passed",
+    "elapsedMs": 49,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Reliability: idle history cleaned at startup without launching services",
+    "status": "passed",
+    "elapsedMs": 49,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Correctness: native argument roundtrip preserves quotes and trailing slashes",
+    "status": "passed",
+    "elapsedMs": 131,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Correctness: spaced relative command uses configured working directory",
+    "status": "passed",
+    "elapsedMs": 171,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Correctness: malformed npm package reports exact file and exception type",
+    "status": "passed",
+    "elapsedMs": 4,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Correctness: removed item retires runtime and closes writer without deleting history",
+    "status": "passed",
+    "elapsedMs": 112,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Correctness: manager force termination distinguishable from application exit 1",
+    "status": "passed",
+    "elapsedMs": 1019,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Correctness: corrupt log line skipped and valid export remains complete",
+    "status": "passed",
+    "elapsedMs": 4,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Correctness: export failure preserves existing destination",
+    "status": "passed",
+    "elapsedMs": 2,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Correctness: literal cmd resources with ampersands and parentheses",
+    "status": "passed",
+    "elapsedMs": 321,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Correctness: native creation failures do not leak handles",
+    "status": "passed",
+    "elapsedMs": 88,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Correctness: removal racing startup cannot recreate deleted runtime",
+    "status": "passed",
+    "elapsedMs": 67,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Correctness: manager disposal stops orphaned config entries and is awaitably idempotent",
+    "status": "passed",
+    "elapsedMs": 1028,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Correctness: shutdown keeps graceful stdin path working",
+    "status": "passed",
+    "elapsedMs": 89,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Correctness: malformed root package and corrupt export records handled consistently",
+    "status": "passed",
+    "elapsedMs": 17,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Correctness: diagnostics bounded and write failure never masks source error",
+    "status": "passed",
+    "elapsedMs": 7,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Correctness: readiness keyword survives surrogate split and bounded tail",
+    "status": "passed",
+    "elapsedMs": 6,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Correctness: repeated runtime retirement does not retain deleted entries",
+    "status": "passed",
+    "elapsedMs": 65,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Correctness: console signal failure includes native operation and error code",
+    "status": "passed",
+    "elapsedMs": 0,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Correctness: HTTP redirect is not readiness success",
+    "status": "passed",
+    "elapsedMs": 2032,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Reliability: blocked stdin has bounded failure and releases lifecycle",
+    "status": "passed",
+    "elapsedMs": 2017,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Reliability: small buffered input flush cannot hang",
+    "status": "passed",
+    "elapsedMs": 2020,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Language preferences round-trip without changing user data",
+    "status": "passed",
+    "elapsedMs": 1,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Installer metadata is pinned to expected GitHub asset",
+    "status": "passed",
+    "elapsedMs": 4,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Verified downloads require both hash and signature, failures clean up",
+    "status": "passed",
+    "elapsedMs": 58,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Unconfigured publisher blocks download before network access",
+    "status": "passed",
+    "elapsedMs": 0,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Signing: valid isolated Authenticode signature",
+    "status": "passed",
+    "elapsedMs": 51,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Signing: wrong publisher rejected after native trust",
+    "status": "passed",
+    "elapsedMs": 7,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Signing: modified signed PE rejected",
+    "status": "passed",
+    "elapsedMs": 6,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Signing: unsigned PE rejected",
+    "status": "passed",
+    "elapsedMs": 2,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Rename and stable startup priority preserve dependencies",
+    "status": "passed",
+    "elapsedMs": 7343,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Merged logs label sources and preserve raw exported records",
+    "status": "passed",
+    "elapsedMs": 14,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Log URLs accept HTTP only and trim surrounding punctuation",
+    "status": "passed",
+    "elapsedMs": 1,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Data migration retains config logs backups and safe locator",
+    "status": "passed",
+    "elapsedMs": 30,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Launch preflight detects resource, interpreter and npm mistakes",
+    "status": "passed",
+    "elapsedMs": 10,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Preflight failure prevents dependency startup",
+    "status": "passed",
+    "elapsedMs": 2,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Manual backups retain config and survive automatic pruning",
+    "status": "passed",
+    "elapsedMs": 135,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Drag model grouping ordering and file import preserve resources",
+    "status": "passed",
+    "elapsedMs": 1,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Readiness legacy defaults and validation",
+    "status": "passed",
+    "elapsedMs": 0,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Readiness waits for split current-run logs and dependencies",
+    "status": "passed",
+    "elapsedMs": 2993,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "TCP and HTTP readiness with delayed local server",
+    "status": "passed",
+    "elapsedMs": 3475,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Readiness rejects HTTP errors and early process exit",
+    "status": "passed",
+    "elapsedMs": 2211,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Readiness timeout ignores old logs and cleans process tree",
+    "status": "passed",
+    "elapsedMs": 1031,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Stop cancels pending readiness and blocks dependent launch",
+    "status": "passed",
+    "elapsedMs": 68,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Release update stable version comparison and safe links",
+    "status": "passed",
+    "elapsedMs": 0,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
   },
   {
     "name": "Release update HTTP results, rate limits and cancellation",
+    "status": "passed",
+    "elapsedMs": 2,
+    "error": null,
+    "reason": null,
     "passed": true,
-    "elapsedMs": 19
+    "skipped": false
   },
   {
     "name": "Configuration atomic save, backup, import, cycles",
+    "status": "passed",
+    "elapsedMs": 16,
+    "error": null,
+    "reason": null,
     "passed": true,
-    "elapsedMs": 101
+    "skipped": false
   },
   {
     "name": "Theme preference compatibility, roundtrip, validation",
+    "status": "passed",
+    "elapsedMs": 36,
+    "error": null,
+    "reason": null,
     "passed": true,
-    "elapsedMs": 55
+    "skipped": false
   },
   {
     "name": "Folder configuration roundtrip, legacy, dissolve, validation",
+    "status": "passed",
+    "elapsedMs": 13,
+    "error": null,
+    "reason": null,
     "passed": true,
-    "elapsedMs": 24
+    "skipped": false
   },
   {
     "name": "Folder start, stop isolation, dependencies, cancellation",
+    "status": "passed",
+    "elapsedMs": 3663,
+    "error": null,
+    "reason": null,
     "passed": true,
-    "elapsedMs": 3732
+    "skipped": false
   },
   {
     "name": "Dual-stream flood, split UTF-8, unterminated tail, export",
+    "status": "passed",
+    "elapsedMs": 293,
+    "error": null,
+    "reason": null,
     "passed": true,
-    "elapsedMs": 720
+    "skipped": false
+  },
+  {
+    "name": "Stop input delay and notes compatibility, validation, roundtrip",
+    "status": "passed",
+    "elapsedMs": 2,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Signal then delayed stop input, timeout starts after input",
+    "status": "passed",
+    "elapsedMs": 2147,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
+  },
+  {
+    "name": "Stop delay ends early on process exit without sending input",
+    "status": "passed",
+    "elapsedMs": 666,
+    "error": null,
+    "reason": null,
+    "passed": true,
+    "skipped": false
   },
   {
     "name": "Interactive input, environment, working directory",
+    "status": "passed",
+    "elapsedMs": 627,
+    "error": null,
+    "reason": null,
     "passed": true,
-    "elapsedMs": 751
+    "skipped": false
   },
   {
     "name": "BAT relative path, paths with spaces, pause input",
+    "status": "passed",
+    "elapsedMs": 307,
+    "error": null,
+    "reason": null,
     "passed": true,
-    "elapsedMs": 316
+    "skipped": false
   },
   {
     "name": "npm run start in isolated project",
+    "status": "passed",
+    "elapsedMs": 791,
+    "error": null,
+    "reason": null,
     "passed": true,
-    "elapsedMs": 1067
+    "skipped": false
   },
   {
     "name": "Process tree stop, restart, repeated launches",
+    "status": "passed",
+    "elapsedMs": 4013,
+    "error": null,
+    "reason": null,
     "passed": true,
-    "elapsedMs": 4206
+    "skipped": false
   },
   {
     "name": "Root exit preserves tracked child until stop",
+    "status": "passed",
+    "elapsedMs": 1596,
+    "error": null,
+    "reason": null,
     "passed": true,
-    "elapsedMs": 1726
+    "skipped": false
   },
   {
     "name": "Owner forced termination kills root and grandchild",
+    "status": "passed",
+    "elapsedMs": 315,
+    "error": null,
+    "reason": null,
     "passed": true,
-    "elapsedMs": 367
+    "skipped": false
   },
   {
     "name": "Dependency order, pending startup cancellation",
+    "status": "passed",
+    "elapsedMs": 2540,
+    "error": null,
+    "reason": null,
     "passed": true,
-    "elapsedMs": 2597
+    "skipped": false
   },
   {
     "name": "Startup failure surfaces and log failure kills process",
+    "status": "passed",
+    "elapsedMs": 20,
+    "error": null,
+    "reason": null,
     "passed": true,
-    "elapsedMs": 36
+    "skipped": false
   },
   {
     "name": "Log retention, ANSI display, persistent history",
+    "status": "passed",
+    "elapsedMs": 3,
+    "error": null,
+    "reason": null,
     "passed": true,
-    "elapsedMs": 26
+    "skipped": false
   },
   {
     "name": "Concurrent starts, bulk cancellation, blocked input stop",
+    "status": "passed",
+    "elapsedMs": 1494,
+    "error": null,
+    "reason": null,
     "passed": true,
-    "elapsedMs": 1546
+    "skipped": false
   },
   {
     "name": "Auto restart stops after five consecutive exits",
+    "status": "passed",
+    "elapsedMs": 30931,
+    "error": null,
+    "reason": null,
     "passed": true,
-    "elapsedMs": 31092
+    "skipped": false
   },
   {
     "name": "PowerShell and Git Bash isolated scripts",
+    "status": "passed",
+    "elapsedMs": 442,
+    "error": null,
+    "reason": null,
     "passed": true,
-    "elapsedMs": 1085
+    "skipped": false
   }
 ]

@@ -65,7 +65,7 @@ public sealed class ItemRow(LaunchItem item, bool isFolder = false, bool collaps
         StatusBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(state.Status switch
         { RunStatus.Running => Theme.IsDark ? "#76D9AD" : "#13795B", RunStatus.Failed => Theme.IsDark ? "#FF9292" : "#BD3434",
             RunStatus.Starting or RunStatus.Restarting or RunStatus.Stopping => Theme.IsDark ? "#EEC77C" : "#946400", _ => Theme.IsDark ? "#ADB4BE" : "#636B76" }));
-        Pid = state.Pid?.ToString() ?? ""; ExitCode = state.ExitCode?.ToString() ?? "";
+        Pid = state.Pid?.ToString() ?? ""; ExitCode = state.ExitCode == NativeProcess.ForcedExitCode ? "0xE04C4401" : state.ExitCode?.ToString() ?? "";
         Duration = state.Active && state.Started is { } time ? (DateTimeOffset.Now - time).ToString(@"hh\:mm\:ss") : "";
         PropertyChanged?.Invoke(this, new(null));
     }
@@ -93,9 +93,14 @@ public partial class MainWindow : Window
     private readonly string? smokePath;
     private readonly bool autostart;
     private bool exiting;
+    private ErrorDiagnostics diagnostics;
+    internal ErrorDiagnostics Diagnostics => diagnostics;
+    private string? lastRefreshFailure;
+    private DateTimeOffset refreshFailureTime;
+    internal string? FaultProbe { get; set; }
     private readonly CancellationTokenSource startupUpdateCancellation = new();
     private ReleaseUpdate? pendingUpdate;
-    private int lastRevision = -1;
+    private long lastRevision = -1;
     private Guid? lastSelected;
     private readonly HashSet<Guid> collapsedFolders = [];
     private readonly Dictionary<Guid, CancellationTokenSource> folderStarts = [];
@@ -106,9 +111,13 @@ public partial class MainWindow : Window
     public MainWindow(ConfigurationStore store, Configuration config, bool portable, string? smokePath, bool autostart)
     {
         this.store = store; this.config = config; this.portable = portable; this.smokePath = smokePath; this.autostart = autostart;
+        diagnostics = new(store.Root);
         manager = new(config, store.Root, Program.SignalAsync);
         UiText.Apply(config.Preferences.Language);
         InitializeComponent();
+        var headers = new[] { "名称", "类型", "状态", "PID", "运行时长", "顺序", "退出码", "资源 / 命令", "自启", "备注", "操作" };
+        for (var index = 0; index < headers.Length; index++)
+            BindingOperations.SetBinding(ItemsGrid.Columns[index], DataGridColumn.HeaderProperty, new Binding("[" + headers[index] + "]") { Source = UiText.Labels });
         Theme.Apply(config.Preferences.Theme);
         SystemEvents.UserPreferenceChanged += SystemThemeChanged;
         ItemsGrid.ItemsSource = rows; ChannelFilter.SelectedIndex = 0;
@@ -116,7 +125,7 @@ public partial class MainWindow : Window
         Title = "LaunchDesk v" + version;
         SetResourceReference(IconProperty, "AppIcon");
         ModeText.Text = (portable ? T("便携模式") : T("用户模式")) + " · v" + version;
-        timer.Tick += (_, _) => { try { Refresh(); } catch (Exception error) { timer.Stop(); ShowError(error); } }; timer.Start();
+        timer.Tick += (_, _) => RefreshTick(Refresh); timer.Start();
         Loaded += OnLoaded;
         SizeChanged += (_, _) => UpdateCompactLayout();
     }
@@ -133,6 +142,41 @@ public partial class MainWindow : Window
     }
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        try { await LoadWindowAsync(); }
+        catch (Exception error) { await FailAndExitAsync(error); }
+    }
+    private void RefreshTick(Action refresh)
+    {
+        try { refresh(); lastRefreshFailure = null; }
+        catch (Exception error)
+        {
+            // One bad frame must not freeze future status/log updates or repeat modal dialogs.
+            var signature = error.GetType().FullName + ":" + error.Message;
+            if (signature != lastRefreshFailure || DateTimeOffset.Now - refreshFailureTime > TimeSpan.FromMinutes(1))
+            { diagnostics.Write("Refresh", error); lastRefreshFailure = signature; refreshFailureTime = DateTimeOffset.Now; }
+            lastRevision = -1; StatusText.Text = ErrorText(error.Message);
+        }
+    }
+    internal async Task FailAndExitAsync(Exception error)
+    {
+        if (exiting) return;
+        diagnostics.Write("Fatal UI error", error);
+        if (smokePath is not null) File.WriteAllText(Path.GetFullPath(smokePath) + ".error.txt", error.ToString());
+        await ExitAsync(1, error);
+    }
+    private async Task LoadWindowAsync()
+    {
+        if (FaultProbe is not null)
+        {
+            var item = new LaunchItem { Name = "isolated-fatal-probe", Kind = LaunchKind.Executable, Target = Path.Combine(Environment.SystemDirectory, "cmd.exe"), Arguments = "/d /c ping -t 127.0.0.1", StopTimeoutSeconds = 1 };
+            config.Items.Add(item); await manager.StartAsync(item.Id);
+            File.WriteAllText(smokePath! + ".pid", manager.Snapshot(item.Id).Pid!.Value.ToString());
+            File.WriteAllText(smokePath! + ".diagnostics-path", diagnostics.PathName);
+            var observeDeadline = DateTimeOffset.UtcNow.AddSeconds(8);
+            while (!File.Exists(smokePath! + ".observed") && DateTimeOffset.UtcNow < observeDeadline) await Task.Delay(50);
+            if (FaultProbe == "--ui-fault-dispatcher") { _ = Dispatcher.BeginInvoke(() => throw new InvalidOperationException("Injected dispatcher fault")); return; }
+            throw new InvalidOperationException("Injected loaded fault after await");
+        }
         if (smokePath is not null)
         {
             CreateTray();
@@ -141,6 +185,20 @@ public partial class MainWindow : Window
             if (config.Items.Count != 0 || config.Folders.Count != 0 || LogBox.Text.Length != 0)
                 throw new InvalidOperationException(T("首次启动空白数据测试失败。"));
             Capture(this, Path.ChangeExtension(smokePath, null) + "-empty.png");
+            var logProbe = new LogView();
+            var payload = string.Concat(Enumerable.Range(0, 2000).Select(x => $"line-{x} {new string('x', 180)}\n"));
+            var measure = Stopwatch.StartNew(); logProbe.Text = payload;
+            var probeSource = logProbe.ItemsSource;
+            for (var i = 0; i < 10; i++) logProbe.Text += $"next-{i} http://localhost:8080/\n";
+            measure.Stop();
+            File.WriteAllText(Path.ChangeExtension(smokePath, null) + "-log-performance.json", System.Text.Json.JsonSerializer.Serialize(new { elapsedMs = measure.ElapsedMilliseconds, sourceReused = ReferenceEquals(probeSource, logProbe.ItemsSource), characters = logProbe.Text.Length }));
+            if (!ReferenceEquals(probeSource, logProbe.ItemsSource)) throw new InvalidOperationException("Log append replaces the source collection.");
+            logProbe.Text = string.Join('\n', logProbe.Text.Split('\n').Skip(512)) + "tail\n";
+            logProbe.Text = "http://loc"; logProbe.Text += "alhost:8080/";
+            var lineProbe = new LogLineView { Value = logProbe.Text };
+            if (lineProbe.Document.Blocks.OfType<System.Windows.Documents.Paragraph>().SelectMany(x => x.Inlines.OfType<System.Windows.Documents.Hyperlink>()).Single().NavigateUri.AbsoluteUri != "http://localhost:8080/")
+                throw new InvalidOperationException("Partial log link append failed.");
+            logProbe.Clear();
             config.Items.AddRange([
                 new() { Name = T("聊天服务"), Kind = LaunchKind.Batch, Target = @"C:\Scripts\chat-service.cmd", Note = "Local service", StopInput = "Y", StopInputDelaySeconds = 2, SendStopSignalBeforeInput = true },
                 new() { Name = T("Node 服务"), Kind = LaunchKind.Command, Target = "npm", Arguments = "run start", WorkingDirectory = @"C:\Services\node" },
@@ -221,7 +279,8 @@ public partial class MainWindow : Window
             Populate(); ItemsGrid.SelectedItem = rows.Single(x => x.IsFolder); Refresh();
             if (!LogBox.Text.Contains(T("[聊天服务]")) || !LogBox.Text.Contains(T("[Node 服务]")) || !LogBox.Text.Contains(T("第二项输出")))
                 throw new InvalidOperationException(T("文件夹合并日志测试失败。"));
-            if (!LogBox.Document.Blocks.OfType<System.Windows.Documents.Paragraph>().SelectMany(x => x.Inlines.OfType<System.Windows.Documents.Hyperlink>()).Any())
+            UpdateLayout();
+            if (!LogBox.HasRenderedLink)
                 throw new InvalidOperationException(T("日志链接标记测试失败。"));
             Capture(this, Path.ChangeExtension(smokePath, null) + "-merged.png");
             var renameRow = rows.Single(x => x.Item.Id == secondMember.Id);
@@ -257,12 +316,40 @@ public partial class MainWindow : Window
                     + "; names=" + names.SequenceEqual(config.Items.Select(x => x.Name)) + "; logs=" + (rawLog == string.Concat(manager.Logs(secondMember.Id).Snapshot().Select(x => x.Text))));
             Capture(this, Path.ChangeExtension(smokePath, null) + "-language-switch.png");
             UiText.Apply(originalLanguage); Populate(); Refresh();
+            var liveTimings = new List<long>();
+            for (var batch = 0; batch < 10; batch++)
+            {
+                manager.Logs(secondMember.Id).Write("stdout", string.Concat(Enumerable.Range(0, 1000).Select(x => $"stress-{batch}-{x} {new string('x', 160)}\n")));
+                var liveMeasure = Stopwatch.StartNew(); Refresh();
+                await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                liveTimings.Add(liveMeasure.ElapsedMilliseconds);
+                if (LogBox.Text.Length > 500_000 || liveMeasure.ElapsedMilliseconds > 5000) throw new InvalidOperationException("Live log stress exceeded display budget.");
+                if (LogBox.VerticalOffset + LogBox.ViewportHeight < LogBox.ExtentHeight - 2) throw new InvalidOperationException("Auto-scroll did not reach the newest log lines.");
+                if (LogBox.RealizedLineCount is <= 0 or > 100) throw new InvalidOperationException("Log rows are not virtualized.");
+                foreach (var rendered in LogView.VisualChildren<LogLineView>(LogBox).Where(x => x.Value.StartsWith("stress-")))
+                {
+                    var run = rendered.Document.Blocks.OfType<System.Windows.Documents.Paragraph>().First().Inlines.OfType<System.Windows.Documents.Run>().First();
+                    var firstRect = run.ContentStart.GetCharacterRect(System.Windows.Documents.LogicalDirection.Forward);
+                    var lastRect = run.ContentStart.GetPositionAtOffset(run.Text.Length - 1)!.GetCharacterRect(System.Windows.Documents.LogicalDirection.Forward);
+                    if (Math.Abs(firstRect.Y - lastRect.Y) > 1 || lastRect.X <= firstRect.X + 60)
+                        throw new InvalidOperationException("Virtual log row wrapped or clipped its long text.");
+                }
+            }
+            File.WriteAllText(Path.ChangeExtension(smokePath, null) + "-live-log-performance.json", System.Text.Json.JsonSerializer.Serialize(new { batches = 10, linesPerBatch = 1000, refreshAndLayoutMs = liveTimings, displayedCharacters = LogBox.Text.Length, renderedRows = LogBox.RealizedLineCount, totalRows = LogBox.Items.Count }));
+            Capture(this, Path.ChangeExtension(smokePath, null) + "-stress.png");
+            await VerifyVirtualLogAsync();
+            RefreshTick(() => throw new IOException("Injected transient refresh failure"));
+            var recovered = false; RefreshTick(() => { Refresh(); recovered = true; });
+            if (!recovered || !timer.IsEnabled || !File.ReadAllText(diagnostics.PathName).Contains("Injected transient refresh failure"))
+                throw new InvalidOperationException("Refresh did not recover with diagnostics.");
+            try { await Program.SignalAsync(int.MaxValue); throw new InvalidOperationException("Invalid PID signalled"); }
+            catch (IOException error) { if (!error.Message.Contains("AttachConsole Win32=")) throw; }
             await ExitAsync(); return;
         }
         Populate(); CreateTray();
         if (config.Preferences.StartMinimized || autostart) Hide();
         if (config.Preferences.CheckUpdatesOnStartup) _ = CheckAtStartupAsync();
-        await Execute(() => manager.StartAllAsync(true));
+        if (store.RecoveredFrom is null) await Execute(() => manager.StartAllAsync(true));
     }
     private async Task CheckAtStartupAsync()
     {
@@ -273,6 +360,48 @@ public partial class MainWindow : Window
             pendingUpdate = release; ShowPendingUpdate();
         }
         catch (Exception) { /* Background update failures must not interfere with application startup. */ }
+    }
+    private async Task VerifyVirtualLogAsync()
+    {
+        var oldText = LogBox.Text;
+        PauseLog.IsChecked = true;
+        var timings = new List<long>();
+        var payload = string.Concat(Enumerable.Range(0, 30000).Select(x => $"v-{x}\n"));
+        var measure = Stopwatch.StartNew(); LogBox.Text = payload; LogBox.ScrollToEnd();
+        await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle); timings.Add(measure.ElapsedMilliseconds);
+        if (LogBox.RealizedLineCount is <= 0 or > 100 || LogBox.Items.Count != 30001)
+            throw new InvalidOperationException("Short-line virtualization failed.");
+        LogBox.ScrollToVerticalOffset(1500);
+        await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        var anchorOffset = LogBox.VerticalOffset;
+        LogBox.SelectRow(1500, false, false); LogBox.SelectRow(1502, true, false);
+        if (LogBox.SelectedText != "v-1500\nv-1501\nv-1502") throw new InvalidOperationException("Virtualized row range selection failed.");
+        LogBox.SelectRow(1500, false, false);
+        LogBox.Text += "tail http://localhost:8080/\n";
+        await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        if (Math.Abs(LogBox.VerticalOffset - anchorOffset) > 1 || LogBox.SelectedText != "v-1500")
+            throw new InvalidOperationException($"Reading position or selection changed on append. Old={anchorOffset}, new={LogBox.VerticalOffset}, selected={LogBox.SelectedText}");
+        LogBox.Text = string.Join('\n', LogBox.Text.Split('\n').Skip(500));
+        await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        if (Math.Abs(LogBox.VerticalOffset - (anchorOffset - 500)) > 1 || LogBox.SelectedText != "v-1500")
+            throw new InvalidOperationException("Rolling retention lost selected row/anchor.");
+        LogBox.SelectAll();
+        if (LogBox.SelectedText != LogBox.Text) throw new InvalidOperationException("Copy all excludes virtualized rows.");
+        LogBox.UnselectAll(); LogBox.ScrollToEnd();
+        await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        if (!LogBox.HasRenderedLink) throw new InvalidOperationException("Recycled rows lose links.");
+        measure.Restart(); LogBox.Text = "replacement\n"; LogBox.ScrollToEnd();
+        await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle); timings.Add(measure.ElapsedMilliseconds);
+        if (LogBox.HasRenderedLink || LogBox.RealizedLineCount > 2) throw new InvalidOperationException("Recycled rows retain old links.");
+        var selectable = LogView.VisualChildren<LogLineView>(LogBox).First(x => x.Value == "replacement"); selectable.Focus();
+        var run = selectable.Document.Blocks.OfType<System.Windows.Documents.Paragraph>().First().Inlines.OfType<System.Windows.Documents.Run>().First();
+        selectable.Selection.Select(run.ContentStart.GetPositionAtOffset(1)!, run.ContentStart.GetPositionAtOffset(5)!);
+        if (LogBox.SelectedText != "epla") throw new InvalidOperationException("Character selection within a visible line failed.");
+        LogBox.Focus();
+        if (LogBox.SelectedText != "epla") throw new InvalidOperationException("Context-menu focus loses character selection.");
+        selectable.Selection.Select(selectable.Document.ContentStart, selectable.Document.ContentStart); LogBox.Focus();
+        File.WriteAllText(Path.ChangeExtension(smokePath!, null) + "-virtualization.json", System.Text.Json.JsonSerializer.Serialize(new { totalShortLines = 30000, updateAndLayoutMs = timings, selectionAndReadingPositionPreserved = true, virtualCopyAllPassed = true }));
+        LogBox.Text = oldText; PauseLog.IsChecked = false; lastRevision = -1; Refresh();
     }
     private void ShowPendingUpdate()
     {
@@ -321,8 +450,6 @@ public partial class MainWindow : Window
         // Flat DataGrid sorting separates members from their folder headers.
         CollectionViewSource.GetDefaultView(rows).SortDescriptions.Clear();
         foreach (var column in ItemsGrid.Columns) column.SortDirection = null;
-        var headers = new[] { "名称", "类型", "状态", "PID", "运行时长", "顺序", "退出码", "资源 / 命令", "自启", "备注", "操作" };
-        for (var index = 0; index < headers.Length; index++) ItemsGrid.Columns[index].Header = T(headers[index]);
         UpdateCompactLayout();
         select ??= Selected?.Item.Id;
         rows.Clear();
@@ -346,10 +473,12 @@ public partial class MainWindow : Window
     private void Refresh()
     {
         if (exiting) return;
+        var states = config.Items.ToDictionary(x => x.Id, x => manager.Snapshot(x.Id));
+        var groups = config.Items.Where(x => x.FolderId.HasValue).GroupBy(x => x.FolderId!.Value).ToDictionary(x => x.Key, x => x.Select(item => states[item.Id]).ToArray());
         foreach (var row in rows)
-            if (row.IsFolder) row.RefreshFolder(config.Items.Where(x => x.FolderId == row.Item.Id).Select(x => manager.Snapshot(x.Id)).ToArray(), folderStarts.ContainsKey(row.Item.Id));
-            else row.Refresh(manager.Snapshot(row.Item.Id), row.Item.FolderId is { } folderId && folderStarts.ContainsKey(folderId));
-        SummaryText.Text = F("{0} 项 · {1} 运行中", config.Items.Count, config.Items.Count(x => manager.Snapshot(x.Id).Status == RunStatus.Running));
+            if (row.IsFolder) row.RefreshFolder(groups.GetValueOrDefault(row.Item.Id) ?? [], folderStarts.ContainsKey(row.Item.Id));
+            else row.Refresh(states[row.Item.Id], row.Item.FolderId is { } folderId && folderStarts.ContainsKey(folderId));
+        SummaryText.Text = F("{0} 项 · {1} 运行中", config.Items.Count, states.Values.Count(x => x.Status == RunStatus.Running));
         if (Selected is not { } selected) { SelectedTitle.Text = T("日志"); LogBox.Clear(); StartButton.IsEnabled = StopButton.IsEnabled = RestartButton.IsEnabled = false; return; }
         var members = selected.IsFolder ? config.Items.Where(x => x.FolderId == selected.Item.Id).ToArray() : [selected.Item];
         if (selected.IsFolder)
@@ -360,16 +489,16 @@ public partial class MainWindow : Window
         else
         {
             SelectedTitle.Text = selected.Name + T(" · 日志");
-            var state = manager.Snapshot(selected.Item.Id);
+            var state = states[selected.Item.Id];
             StartButton.IsEnabled = !state.Active; StopButton.IsEnabled = state.Active; RestartButton.IsEnabled = true;
             if (state.Detail.Length > 0) StatusText.Text = selected.Name + ": " + ErrorText(state.Detail);
         }
         if (lastSelected != selected.Item.Id)
         {
             lastSelected = selected.Item.Id; lastRevision = -1;
-            foreach (var member in members) manager.Logs(member.Id).LoadRecent();
+            _ = LoadSelectedLogsAsync(members, selected.Item.Id);
         }
-        var revision = members.Aggregate(0, (sum, x) => unchecked(sum + manager.Logs(x.Id).Revision));
+        var revision = members.Length == 0 ? 0 : members.Max(x => manager.Logs(x.Id).ChangeStamp);
         LogBox.Opacity = PauseLog.IsChecked == true ? 0.65 : 1;
         if (PauseLog.IsChecked == true || lastRevision == revision) return;
         lastRevision = revision;
@@ -394,18 +523,34 @@ public partial class MainWindow : Window
         if (value.Length > 500_000) value = value[^500_000..];
         if (!string.IsNullOrWhiteSpace(LogSearch.Text)) value = string.Join(Environment.NewLine,
             value.Split('\n').Where(x => x.Contains(LogSearch.Text, StringComparison.OrdinalIgnoreCase)));
-        var verticalOffset = LogBox.VerticalOffset;
         var horizontalOffset = LogBox.HorizontalOffset;
         LogBox.Text = value;
-        if (AutoScroll.IsChecked == true) LogBox.ScrollToEnd();
-        else { LogBox.ScrollToVerticalOffset(verticalOffset); LogBox.ScrollToHorizontalOffset(horizontalOffset); }
+        if (AutoScroll.IsChecked == true)
+        {
+            LogBox.ScrollToEnd();
+            var selectedId = selected.Item.Id;
+            Dispatcher.InvokeAsync(() => { if (!exiting && AutoScroll.IsChecked == true && lastSelected == selectedId) LogBox.ScrollToEnd(); }, DispatcherPriority.ContextIdle);
+        }
+        else LogBox.ScrollToHorizontalOffset(horizontalOffset);
     }
     private async Task Execute(Func<Task> action)
     {
         if (exiting) return;
         try { await action(); StatusText.Text = T("就绪"); }
         catch (Exception error) { if (!exiting) ShowError(error); }
-        Refresh();
+        RefreshTick(Refresh);
+    }
+    private async Task LoadSelectedLogsAsync(LaunchItem[] members, Guid selectedId)
+    {
+        var currentManager = manager;
+        try
+        {
+            await Task.Run(() => { foreach (var item in members) currentManager.Logs(item.Id).LoadRecent(); });
+            if (!exiting && manager == currentManager && lastSelected == selectedId) { lastRevision = -1; Refresh(); }
+        }
+        catch (ObjectDisposedException) { }
+        catch (KeyNotFoundException) { }
+        catch (Exception error) { if (!exiting) ShowError(error); }
     }
     private void ShowError(Exception error)
     {
@@ -572,7 +717,7 @@ public partial class MainWindow : Window
         var clone = ConfigurationStore.Clone(row.Item); clone.Id = Guid.NewGuid(); clone.Name += T(" 副本"); clone.AutoStart = false;
         SaveOrRollback(() => config.Items.Add(clone));
     }
-    private void DeleteClick(object sender, RoutedEventArgs e)
+    private async void DeleteClick(object sender, RoutedEventArgs e)
     {
         if (Selected is not { } row) return;
         if (row.IsFolder)
@@ -585,7 +730,10 @@ public partial class MainWindow : Window
         if (!CanEdit(row.Item)) return;
         if (config.Items.Any(x => x.Dependencies.Contains(row.Item.Id))) { ShowError(new InvalidOperationException(T("其他启动项依赖该项，请先移除依赖。"))); return; }
         if (MessageBox.Show(this, T("删除“") + row.Name + T("”？日志将保留。"), T("删除启动项"), MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+        {
             SaveOrRollback(() => config.Items.Remove(row.Item));
+            if (!config.Items.Any(x => x.Id == row.Item.Id)) await Execute(() => manager.RemoveRuntimeAsync(row.Item.Id));
+        }
     }
     private void AddFolderClick(object s, RoutedEventArgs e) => EditFolder(null);
     private void EditFolder(LaunchFolder? folder)
@@ -677,11 +825,17 @@ public partial class MainWindow : Window
         var merged = Selected?.IsFolder == true;
         var dialog = new SaveFileDialog { Filter = T("文本日志 (*.txt)|*.txt|原始记录 (*.jsonl)|*.jsonl"), FileName = "LaunchDesk-log.txt" };
         var sources = members.Select(x => (x.Id, x.Name, Store: manager.Logs(x.Id))).ToArray();
-        if (dialog.ShowDialog(this) == true) await Execute(() => Task.Run(() =>
+        if (dialog.ShowDialog(this) == true) await Execute(async () =>
         {
-            if (merged) LogStore.ExportMerged(sources, dialog.FileName);
-            else sources[0].Store.Export(dialog.FileName);
-        }));
+            var skipped = await Task.Run(() =>
+            {
+                int count;
+                if (merged) LogStore.ExportMerged(sources, dialog.FileName, out count);
+                else sources[0].Store.Export(dialog.FileName, out count);
+                return count;
+            });
+            if (skipped > 0) MessageBox.Show(this, F("导出完成，跳过 {0} 条损坏记录；原始日志未修改。", skipped), T("导出日志"), MessageBoxButton.OK, MessageBoxImage.Warning);
+        });
     }
     private void ExportConfigClick(object s, RoutedEventArgs e)
     {
@@ -759,7 +913,7 @@ public partial class MainWindow : Window
                     }
                 }
                 catch { if (changingRoot) manager = new(config, store.Root, Program.SignalAsync); throw; }
-                store = targetStore; portable = dialog.Portable;
+                store = targetStore; portable = dialog.Portable; diagnostics = new(store.Root);
                 if (changingRoot) manager = new(config, store.Root, Program.SignalAsync);
             }
             catch { config.Preferences.Language = previous.Language; config.Preferences.Theme = previous.Theme; config.Preferences.StartAtLogin = previous.StartAtLogin; config.Preferences.StartMinimized = previous.StartMinimized;
@@ -794,12 +948,20 @@ public partial class MainWindow : Window
         if (WindowState == WindowState.Minimized && config.Preferences.MinimizeToTray && smokePath is null) Hide();
         else if (WindowState == WindowState.Normal && smokePath is null) ShowPendingUpdate();
     }
-    private async Task ExitAsync()
+    private async Task ExitAsync(int exitCode = 0, Exception? fatalError = null)
     {
         if (exiting) return; exiting = true; startupUpdateCancellation.Cancel(); SystemEvents.UserPreferenceChanged -= SystemThemeChanged; timer.Stop(); IsEnabled = false; StatusText.Text = T("正在停止进程并保存日志…");
         foreach (var pending in folderStarts.Values.ToArray()) pending.Cancel();
         try { await manager.DisposeAsync(); }
-        catch (Exception error) { MessageBox.Show(this, ErrorText(error.Message), T("退出清理失败"), MessageBoxButton.OK, MessageBoxImage.Error); }
-        finally { tray?.Dispose(); trayIcon?.Dispose(); Close(); System.Windows.Application.Current.Shutdown(); }
+        catch (Exception error) { diagnostics.Write("Exit cleanup", error); if (smokePath is null) MessageBox.Show(this, ErrorText(error.Message), T("退出清理失败"), MessageBoxButton.OK, MessageBoxImage.Error); exitCode = 1; }
+        finally
+        {
+            try
+            {
+                if (fatalError is not null && smokePath is null)
+                    MessageBox.Show(this, ErrorText(fatalError.Message) + "\n" + diagnostics.PathName, "LaunchDesk", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally { tray?.ContextMenuStrip?.Dispose(); tray?.Dispose(); trayIcon?.Dispose(); Close(); System.Windows.Application.Current.Shutdown(exitCode); }
+        }
     }
 }

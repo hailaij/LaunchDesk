@@ -115,11 +115,43 @@ public sealed class ConfigurationStore
     };
     public string Root { get; }
     public string ConfigPath => Path.Combine(Root, "config.json");
+    public string? RecoveredFrom { get; private set; }
+    public string? CorruptArchive { get; private set; }
     public ConfigurationStore(string root) { Root = Path.GetFullPath(root); Directory.CreateDirectory(Root); }
     public Configuration Load()
     {
+        RecoveredFrom = CorruptArchive = null;
         if (!File.Exists(ConfigPath)) return new();
-        return Read(ConfigPath);
+        try { return Read(ConfigPath); }
+        catch (Exception error) when (error is JsonException or InvalidDataException)
+        {
+            // Future schemas must not be replaced with an older backup.
+            try
+            {
+                using var document = JsonDocument.Parse(File.ReadAllText(ConfigPath));
+                if (document.RootElement.ValueKind == JsonValueKind.Object)
+                    foreach (var property in document.RootElement.EnumerateObject())
+                        if (property.Name.Equals("SchemaVersion", StringComparison.OrdinalIgnoreCase) && property.Value.ValueKind == JsonValueKind.Number
+                            && property.Value.TryGetInt32(out var version) && version > 1) throw;
+            }
+            catch (JsonException) { }
+            var backupRoot = Path.Combine(Root, "backups");
+            var paths = new[] { backupRoot, Path.Combine(backupRoot, "manual") }
+                .Where(Directory.Exists).SelectMany(path => new DirectoryInfo(path).GetFiles("config-*.json"))
+                .OrderByDescending(x => x.LastWriteTimeUtc);
+            foreach (var path in paths)
+            {
+                Configuration restored;
+                try { restored = Read(path.FullName); }
+                catch (Exception backupError) when (backupError is JsonException or InvalidDataException or IOException or UnauthorizedAccessException) { continue; }
+                var archive = Path.Combine(Root, $"config.corrupt-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.json");
+                File.Copy(ConfigPath, archive, false);
+                Save(restored);
+                RecoveredFrom = path.FullName; CorruptArchive = archive;
+                return restored;
+            }
+            throw;
+        }
     }
     public static Configuration Read(string path)
     {

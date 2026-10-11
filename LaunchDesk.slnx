@@ -1,1 +1,1 @@
-<Solution><Project Path="src/LaunchDesk.Core/LaunchDesk.Core.csproj"/><Project Path="src/LaunchDesk.App/LaunchDesk.App.csproj"/><Project Path="tests/LaunchDesk.Tests/LaunchDesk.Tests.csproj"/></Solution>
+<Solution><Project Path="src/LaunchDesk.Core/LaunchDesk.Core.csproj"/><Project Path="src/LaunchDesk.App/LaunchDesk.App.csproj"/><Project Path="tests/LaunchDesk.Tests/LaunchDesk.Tests.csproj"/><Project Path="tests/LaunchDesk.UiChecks/LaunchDesk.UiChecks.csproj"/><Project Path="tools/LaunchDesk.ReleaseChecks/LaunchDesk.ReleaseChecks.csproj"/></Solution>

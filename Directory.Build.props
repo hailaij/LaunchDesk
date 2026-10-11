@@ -1,1 +1,13 @@
-<Project><PropertyGroup><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><Version>0.5.0</Version><Deterministic>true</Deterministic><EnableNETAnalyzers>true</EnableNETAnalyzers></PropertyGroup></Project>
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>0.6.0</Version>
+    <Deterministic>true</Deterministic>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <!-- No publisher is trusted by default. Release checks compare this against reviewed signing.json. -->
+    <UpdateSignerSha256 Condition="'$(UpdateSignerSha256)' == ''"></UpdateSignerSha256>
+  </PropertyGroup>
+</Project>

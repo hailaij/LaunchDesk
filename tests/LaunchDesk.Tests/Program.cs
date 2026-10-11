@@ -17,12 +17,34 @@ LaunchItem Worker(string arguments) => new() { Name = "test", Kind = LaunchKind.
 if (args.Length > 0 && args[0] != "--report")
 {
     if (args[0] == "--signal") { var sent = NativeProcess.SendControlSignal(int.Parse(args[1])); Thread.Sleep(100); return sent ? 0 : 1; }
+    if (args[0] == "--input-probe")
+    {
+        var probeRoot = Path.Combine(Path.GetTempPath(), "LaunchDesk-input-probe-" + Guid.NewGuid().ToString("N"));
+        var item = Worker("--worker sleep");
+        await using var manager = new ProcessManager(new() { Items = [item] }, probeRoot);
+        await manager.StartAsync(item.Id);
+        var write = manager.SendInputAsync(item.Id, new string('x', 100_000));
+        var done = await Task.WhenAny(write, Task.Delay(3000)) == write;
+        await manager.StopAsync(item.Id);
+        try { await write; } catch (IOException) { }
+        Console.WriteLine("Blocked input bounded without external stop: " + done); return done ? 0 : 1;
+    }
+    if (args[0] == "--maintenance-probe")
+    {
+        var probeRoot = Path.Combine(Path.GetTempPath(), "LaunchDesk-maintenance-probe-" + Guid.NewGuid().ToString("N"));
+        var directory = Path.Combine(probeRoot, "logs", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "expired.jsonl"); File.WriteAllText(path, "expired"); File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddDays(-5));
+        await using var manager = new ProcessManager(new() { Preferences = new() { LogDays = 1 } }, probeRoot);
+        await Task.Delay(1000); var cleaned = !File.Exists(path);
+        Console.WriteLine("Idle history cleaned without process launch: " + cleaned); return cleaned ? 0 : 1;
+    }
     if (args[0] == "--worker")
     {
         Console.OutputEncoding = new UTF8Encoding(false);
         Console.InputEncoding = new UTF8Encoding(false);
         switch (args[1])
         {
+            case "args": Console.Write(JsonSerializer.Serialize(args.Skip(2).ToArray())); return 0;
             case "flood":
                 using (var output = Console.OpenStandardOutput())
                 using (var error = Console.OpenStandardError())
@@ -86,7 +108,9 @@ if (args.Length > 0 && args[0] != "--report")
 
 var root = Path.Combine(Path.GetTempPath(), "LaunchDesk-tests-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
-var results = new List<object>();
+var results = new List<TestResult>();
+var filterIndex = Array.IndexOf(args, "--filter");
+var filter = filterIndex >= 0 && filterIndex + 1 < args.Length ? args[filterIndex + 1] : null;
 void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
 async Task Until(Func<bool> condition, int seconds = 15)
 {
@@ -101,12 +125,41 @@ IEnumerable<string> ReadLog(string file)
 }
 async Task Test(string name, Func<Task> action)
 {
+    if (filter is not null && !name.Contains(filter, StringComparison.OrdinalIgnoreCase)) return;
     var time = Stopwatch.StartNew();
-    try { await action(); Console.WriteLine("PASS " + name); results.Add(new { name, passed = true, elapsedMs = time.ElapsedMilliseconds }); }
-    catch (Exception error) { Console.WriteLine("FAIL " + name + ": " + error); results.Add(new { name, passed = false, error = error.ToString() }); }
+    try { await action(); Console.WriteLine("PASS " + name); results.Add(new(name, "passed", time.ElapsedMilliseconds)); }
+    catch (TestSkippedException error) { Console.WriteLine("SKIP " + name + ": " + error.Message); results.Add(new(name, "skipped", time.ElapsedMilliseconds, reason: error.Message)); }
+    catch (Exception error) { Console.WriteLine("FAIL " + name + ": " + error); results.Add(new(name, "failed", time.ElapsedMilliseconds, error: error.ToString())); }
 }
 async Task Signal(int pid)
 { using var helper = Process.Start(Self("--signal", pid.ToString()))!; await helper.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3)); }
+
+await ReliabilityChecks.Run(root, Test);
+await CorrectnessChecks.Run(root, Test, Worker);
+await Test("Reliability: blocked stdin has bounded failure and releases lifecycle", async () =>
+{
+    var item = Worker("--worker sleep");
+    await using var manager = new ProcessManager(new() { Items = [item] }, root);
+    await manager.StartAsync(item.Id);
+    var pid = manager.Snapshot(item.Id).Pid!.Value;
+    try { await manager.SendInputAsync(item.Id, new string('x', 100_000)).WaitAsync(TimeSpan.FromSeconds(5)); throw new Exception("Blocked input accepted"); }
+    catch (IOException error) { Assert(error.Message.Contains("超时"), "explicit timeout"); }
+    await manager.StopAsync(item.Id).WaitAsync(TimeSpan.FromSeconds(5));
+    Assert(!Alive(pid) && !manager.Snapshot(item.Id).Active, "timeout releases gate and kills tree");
+});
+await Test("Reliability: small buffered input flush cannot hang", async () =>
+{
+    var item = Worker("--worker sleep");
+    await using var manager = new ProcessManager(new() { Items = [item] }, root);
+    await manager.StartAsync(item.Id); var timedOut = false;
+    for (var i = 0; i < 32; i++)
+    {
+        try { await manager.SendInputAsync(item.Id, new string('x', 1000)).WaitAsync(TimeSpan.FromSeconds(5)); }
+        catch (IOException error) { timedOut = error.Message.Contains("超时"); break; }
+    }
+    await manager.StopAsync(item.Id).WaitAsync(TimeSpan.FromSeconds(5));
+    Assert(timedOut && !manager.Snapshot(item.Id).Active, "Flush timeout is bounded");
+});
 
 await Test("Language preferences round-trip without changing user data", () =>
 {
@@ -165,27 +218,7 @@ await Test("Unconfigured publisher blocks download before network access", async
     catch (InvalidDataException) { }
     Assert(handler.Calls == 0, "no network request without trust pin");
 });
-await Test("Native Windows trust rejects unsigned installer", async () =>
-{
-    var path = Path.Combine(root, "unsigned.exe"); await File.WriteAllBytesAsync(path, Encoding.UTF8.GetBytes("not a signed PE"));
-    try { new AuthenticodeVerifier(new string('0', 64)).Verify(path); throw new Exception("unsigned accepted"); }
-    catch (InvalidDataException) { }
-});
-await Test("Native Windows trust validates known publisher and rejects mismatched pin", () =>
-{
-    var path = @"D:\tool\Inno Setup 6\ISCC.exe";
-    // Optional local native fixture; production trust pins are never derived from this compiler.
-    if (!File.Exists(path)) { Console.WriteLine("SKIP native signed fixture unavailable"); return Task.CompletedTask; }
-    var pin = "4EFD84E6F1091B19321231743B9AA86482EFFD6D0BEA9F7A44DB6211154616F3";
-    Assert(new AuthenticodeVerifier(pin).Verify(path).Contains("Pyrsys", StringComparison.OrdinalIgnoreCase), "verified publisher context");
-    try { new AuthenticodeVerifier(new string('0', 64)).Verify(path); throw new Exception("wrong publisher accepted"); }
-    catch (InvalidDataException error) { Assert(error.Message.Contains("发行者"), "valid signature wrong pin"); }
-    var tampered = Path.Combine(root, "tampered-compiler.exe"); File.Copy(path, tampered);
-    using (var file = new FileStream(tampered, FileMode.Open, FileAccess.ReadWrite)) { file.Position = 512; var original = file.ReadByte(); file.Position = 512; file.WriteByte((byte)(original ^ 0xff)); }
-    try { new AuthenticodeVerifier(pin).Verify(tampered); throw new Exception("tampered file accepted"); }
-    catch (InvalidDataException) { }
-    return Task.CompletedTask;
-});
+await SigningChecks.Run(root, Test);
 await Test("Rename and stable startup priority preserve dependencies", async () =>
 {
     var folder = new LaunchFolder { Name = "group" };
@@ -677,11 +710,12 @@ await Test("PowerShell and Git Bash isolated scripts", async () =>
     Assert(manager2.Snapshot(shell.Id).ExitCode == 0, "Shell exit");
     Assert(string.Concat(manager2.Logs(shell.Id).Snapshot().Where(x => x.Channel == "stdout").Select(x => x.Text)).Contains("shell-ok"), "Shell text");
 });
-var reportPath = args.Length == 2 && args[0] == "--report" ? args[1] : Path.Combine(root, "results.json");
+var reportPath = args.Length >= 2 && args[0] == "--report" ? args[1] : Path.Combine(root, "results.json");
 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(reportPath))!);
 await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
 Console.WriteLine("Evidence: " + root);
-return results.Any(x => x.GetType().GetProperty("passed")?.GetValue(x) is false) ? 1 : 0;
+Console.WriteLine($"Summary: {results.Count(x => x.status == "passed")} passed, {results.Count(x => x.status == "failed")} failed, {results.Count(x => x.status == "skipped")} skipped");
+return results.Count == 0 ? 2 : results.Any(x => x.status == "failed") || (args.Contains("--fail-on-skip") && results.Any(x => x.status == "skipped")) ? 1 : 0;
 
 sealed class UpdateResponseHandler : HttpMessageHandler
 {

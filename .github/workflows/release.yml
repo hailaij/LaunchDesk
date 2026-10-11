@@ -1,0 +1,194 @@
+name: Trusted signed release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag on main (must match Directory.Build.props)
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: trusted-release-${{ inputs.tag }}
+  cancel-in-progress: false
+jobs:
+  sign:
+    runs-on: windows-latest
+    environment: production-signing
+    permissions:
+      contents: read
+      actions: read
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate reviewed release ref and signing configuration
+        id: signing
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          SIGNPATH_TOKEN_PRESENT: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+        run: |
+          if ($env:GITHUB_REF -ne 'refs/heads/main') { throw 'Release workflow must be dispatched from main' }
+          $version = ([xml](Get-Content Directory.Build.props -Raw)).Project.PropertyGroup.Version
+          if ($env:RELEASE_TAG -ne ('v' + $version)) { throw 'Release tag/version mismatch' }
+          $tagCommit = git rev-parse ($env:RELEASE_TAG + '^{commit}')
+          if ($LASTEXITCODE -ne 0 -or $tagCommit -ne $env:GITHUB_SHA) { throw 'Tag must point to this reviewed main commit' }
+          if ($env:SIGNPATH_TOKEN_PRESENT -ne 'true') { throw 'Signing token missing: release blocked' }
+          ./scripts/Get-ReleaseConfiguration.ps1 -GitHubOutputs
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          global-json-file: global.json
+      - name: Locked build and acceptance
+        shell: pwsh
+        run: |
+          dotnet restore LaunchDesk.slnx --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Restore failed' }
+          dotnet build LaunchDesk.slnx -c Release --no-restore -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          ./tests/Invoke-CiVerification.ps1
+          $tool = (Get-Content build/toolchain.json -Raw | ConvertFrom-Json).innoSetup
+          choco install innosetup --version $tool.version --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned compiler installation failed' }
+          ./scripts/Verify-CiToolchain.ps1
+          ./scripts/package.ps1 -OutputDirectory artifacts/signing/package -UpdateSignerSha256 '${{ steps.signing.outputs.certificateSha256 }}'
+      - name: Upload application signing inputs
+        id: app-input
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: app-signing-input
+          if-no-files-found: error
+          path: |
+            artifacts/signing/package/LaunchDesk-win-x64/LaunchDesk.exe
+            artifacts/signing/package/LaunchDesk-win-x64/LaunchDesk.dll
+            artifacts/signing/package/LaunchDesk-win-x64/LaunchDesk.Core.dll
+      - name: Sign application
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ steps.signing.outputs.signPathOrganizationId }}
+          project-slug: ${{ steps.signing.outputs.signPathProjectSlug }}
+          signing-policy-slug: ${{ steps.signing.outputs.signPathPolicySlug }}
+          artifact-configuration-slug: ${{ steps.signing.outputs.signPathAppConfigurationSlug }}
+          github-artifact-id: ${{ steps.app-input.outputs.artifact-id }}
+          output-artifact-directory: artifacts/signing/app-returned
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 1800
+      - name: Verify application and prepare uninstaller
+        shell: pwsh
+        run: |
+          ./scripts/Import-SignedFiles.ps1 -Source artifacts/signing/app-returned -Destination artifacts/signing/package/LaunchDesk-win-x64 -Mode App
+          ./scripts/Compile-SignedInstaller.ps1 -PublishDirectory artifacts/signing/package/LaunchDesk-win-x64 -SigningDirectory artifacts/signing/uninstaller -PrepareUninstaller
+      - name: Upload uninstaller signing input
+        id: uninstaller-input
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: uninstaller-signing-input
+          if-no-files-found: error
+          path: artifacts/signing/uninstaller/uninst-*.e32
+      - name: Sign uninstaller
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ steps.signing.outputs.signPathOrganizationId }}
+          project-slug: ${{ steps.signing.outputs.signPathProjectSlug }}
+          signing-policy-slug: ${{ steps.signing.outputs.signPathPolicySlug }}
+          artifact-configuration-slug: ${{ steps.signing.outputs.signPathUninstallerConfigurationSlug }}
+          github-artifact-id: ${{ steps.uninstaller-input.outputs.artifact-id }}
+          output-artifact-directory: artifacts/signing/uninstaller-returned
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 1800
+      - name: Verify uninstaller and compile installer
+        shell: pwsh
+        run: |
+          ./scripts/Import-SignedFiles.ps1 -Source artifacts/signing/uninstaller-returned -Destination artifacts/signing/uninstaller -Mode Uninstaller
+          ./scripts/Compile-SignedInstaller.ps1 -PublishDirectory artifacts/signing/package/LaunchDesk-win-x64 -SigningDirectory artifacts/signing/uninstaller
+      - name: Upload installer signing input
+        id: installer-input
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: installer-signing-input
+          if-no-files-found: error
+          path: artifacts/signing/installer/*-setup.exe
+      - name: Sign installer
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ steps.signing.outputs.signPathOrganizationId }}
+          project-slug: ${{ steps.signing.outputs.signPathProjectSlug }}
+          signing-policy-slug: ${{ steps.signing.outputs.signPathPolicySlug }}
+          artifact-configuration-slug: ${{ steps.signing.outputs.signPathInstallerConfigurationSlug }}
+          github-artifact-id: ${{ steps.installer-input.outputs.artifact-id }}
+          output-artifact-directory: artifacts/signing/installer-returned
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 1800
+      - name: Verify final signed bytes then hash
+        shell: pwsh
+        run: |
+          ./scripts/Import-SignedFiles.ps1 -Source artifacts/signing/installer-returned -Destination artifacts/signing/installer -Mode Installer
+          ./tests/Verify-Ui.ps1 -AppPath artifacts/signing/package/LaunchDesk-win-x64/LaunchDesk.exe -OutputDirectory artifacts/verification/signed-ui
+          ./scripts/Finalize-Release.ps1 -PublishDirectory artifacts/signing/package/LaunchDesk-win-x64 -InstallerDirectory artifacts/signing/installer
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: verified-release
+          if-no-files-found: error
+          path: artifacts/release/*
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: signed-release-evidence
+          path: |
+            artifacts/verification/**/*.json
+            artifacts/verification/**/*.png
+            artifacts/signing/installer/compiler.log
+  publish:
+    needs: sign
+    runs-on: windows-latest
+    environment: production-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: verified-release
+          path: release
+      - name: Check handoff hashes and publish draft
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          $config = ./scripts/Get-ReleaseConfiguration.ps1
+          dotnet restore tools/LaunchDesk.ReleaseChecks --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Verifier restore failed' }
+          dotnet build tools/LaunchDesk.ReleaseChecks -c Release --no-restore
+          if ($LASTEXITCODE -ne 0) { throw 'Verifier build failed' }
+          ./scripts/Verify-ReleaseFiles.ps1 -Directory release -Pin $config.certificateSha256 -Mode Installer
+          $manifest = Get-Content release/release-manifest.json -Raw | ConvertFrom-Json
+          if ($manifest.certificateSha256 -ne $config.certificateSha256 -or @($manifest.assets).Count -ne 2) { throw 'Unreviewed publisher or invalid asset count' }
+          if ($env:RELEASE_TAG -ne ('v' + $manifest.version)) { throw 'Verified version does not match release' }
+          $expectedAssets = @("LaunchDesk-v$($manifest.version)-win-x64-setup.exe", "LaunchDesk-v$($manifest.version)-win-x64.zip")
+          if (@($manifest.assets.name | Sort-Object -Unique).Count -ne 2 -or @($manifest.assets | Where-Object name -notin $expectedAssets).Count) { throw 'Release asset inventory mismatch' }
+          foreach ($asset in $manifest.assets) {
+            if ($asset.name -notmatch '^LaunchDesk-v\d+\.\d+\.\d+-win-x64(-setup\.exe|\.zip)$') { throw 'Invalid asset name' }
+            $file = Join-Path release $asset.name
+            if ((Get-FileHash $file -Algorithm SHA256).Hash -ne $asset.sha256 -or (Get-Item $file).Length -ne $asset.size) { throw 'Signed handoff bytes changed' }
+          }
+          $zip = Join-Path release ('LaunchDesk-v' + $manifest.version + '-win-x64.zip')
+          Expand-Archive -LiteralPath $zip -DestinationPath verified-portable
+          ./scripts/Verify-ReleaseFiles.ps1 -Directory verified-portable -Pin $config.certificateSha256 -Mode App
+          $existing = gh release view $env:RELEASE_TAG --json tagName 2>$null
+          if ($LASTEXITCODE -eq 0) { throw 'Release exists; overwrite refused' }
+          gh release create $env:RELEASE_TAG release/* --verify-tag --draft --title ('LaunchDesk ' + $env:RELEASE_TAG) --generate-notes
+          if ($LASTEXITCODE -ne 0) { throw 'Draft release creation failed' }
+          gh release edit $env:RELEASE_TAG --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Release remains draft; publishing failed' }

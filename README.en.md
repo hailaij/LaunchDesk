@@ -2,11 +2,20 @@
 
 [Simplified Chinese](README.md) | [English](README.en.md)
 
-A Windows desktop manager for scripts, commands and applications, with real-time logs. Latest published version: **v0.5.0** (early development).
+A Windows desktop manager for scripts, commands and applications, with real-time logs. Current version: **v0.6.0** (unsigned prerelease, early development).
+
+**Release status:** This is an unsigned prerelease for manual download and installation only. Missing production signing configuration still blocks the trusted update pipeline. Test certificates never enter production trust. See [Trust and engineering verification](docs/trust-and-engineering.md).
 
 ![LaunchDesk](docs/images/main.png)
 
 ## Features
+
+### New and Fixed in v0.6.0
+
+- Reliability fixes for concurrent logs, backup recovery, command quoting, relative paths and runtime cleanup after stopping/deleting items.
+- Virtualized log rows preserve selection, copying, links and reading positions; atomic exports and local rotating error diagnostics.
+- 73 test groups distinguish passed, failed and skipped. CI covers isolated signatures, bilingual UI and fatal process cleanup.
+- Locked dependencies, SHA-pinned Actions and unified SDK/version sources. A strict signing/verification/hashing/release pipeline awaits production certificate configuration.
 
 ### New and Fixed in v0.5.0
 
@@ -49,7 +58,7 @@ A Windows desktop manager for scripts, commands and applications, with real-time
 
 Windows 10/11 x64. Self-contained packages include the .NET runtime. Keep the entire extracted directory and launch `LaunchDesk.exe`.
 
-Download `LaunchDesk-v0.5.0-win-x64-setup.exe` or the portable `LaunchDesk-v0.5.0-win-x64.zip` from [Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.5.0). SHA-256 sidecar files are provided. Current installers are unsigned.
+Manually download `LaunchDesk-v0.6.0-win-x64-setup.exe` or the portable `LaunchDesk-v0.6.0-win-x64.zip` from [Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.6.0). SHA-256 sidecar files are provided. This unsigned prerelease is not a trusted in-app update.
 
 First launch is empty. No local services are preconfigured or executed. Closing the window hides it to the tray. Use **Exit** in the tray menu to stop all managed processes and drain logs before upgrading. Single-instance activation may restore an already running older copy; window titles show the actual assembly version, and cross-version/path launches show a warning.
 
@@ -79,10 +88,11 @@ Default data directory: `%LOCALAPPDATA%\LaunchDesk`.
 - `backups/`: up to 20 automatic configuration backups.
 - `backups/manual/`: manual configuration snapshots, not subject to automatic pruning; no logs or scripts. Restore through configuration import.
 - `logs/<item ID>/`: UTF-8 JSONL logs.
+- `diagnostics/errors.log`: local error diagnostics, rotating at approximately 2 MiB with up to three older files; never automatically uploaded.
 
 `portable.flag` next to the executable enables `data/` next to it. The application also allows a custom directory, recorded in `%LOCALAPPDATA%\LaunchDesk-location.json`; the portable flag takes precedence. Migration requires all items stopped, an empty writable destination, no symlinks/junctions and no ancestor/descendant relationship. Failed `.migration-<ID>` staging directories are retained for diagnosis.
 
-Default retention is 7 days and approximately 200 MiB per item. Cleanup runs during rotation; a record may temporarily exceed the limit. Inactive items are not cleaned in the background. The panel shows at most 3,000 record fragments and approximately 500,000 characters; export accesses older retained data. Pausing or clearing the panel does not stop capture or delete files. History deletion is separate.
+Default retention is 7 days and approximately 200 MiB per item. Cleanup runs during rotation, at startup and hourly, including inactive items; a record may temporarily exceed the limit. The panel shows at most 3,000 record fragments and approximately 500,000 characters; export accesses older retained data. Pausing or clearing the panel does not stop capture or delete files. History deletion is separate.
 
 TXT is readable; JSONL retains timestamps, channels and raw bytes. Each pipe preserves its own byte order; interleaving stdout and stderr reflects read order, not a guaranteed global source ordering. Configurations can contain private paths and environment variables; only import trusted files and review exports before sharing.
 
@@ -103,17 +113,20 @@ No per-item elevation, WSL/Docker lifecycle management, Windows service hosting 
 Requires Windows x64, **.NET SDK 10.0.401** and [Inno Setup 6](https://jrsoftware.org/isdl.php) for installers. No third-party NuGet PackageReference dependencies; self-contained runtime packs restore from official NuGet.
 
 ```powershell
+dotnet restore LaunchDesk.slnx --locked-mode
 dotnet build LaunchDesk.slnx -c Release
 dotnet run --project tests/LaunchDesk.Tests -c Release -- --report artifacts/test-results.json
 ./scripts/package.ps1
 ./scripts/build-installer.ps1 -CompilerPath 'D:\tool\Inno Setup 6\ISCC.exe'
 ```
 
-Installer output: `artifacts/installers/LaunchDesk-v0.5.0-win-x64-setup.exe` plus SHA-256. Installs for the current user to `%LOCALAPPDATA%\Programs\LaunchDesk`, creates Start menu and optional desktop shortcuts, and does not start the app by default. Exit the tray instance before update/uninstall. Uninstall retains user data and removes only login startup entries belonging to its install path. The installer is English; the application supports Chinese/English. Certificates are not configured, so current installers remain unsigned.
+Installer output: `artifacts/installers/LaunchDesk-v0.6.0-win-x64-setup.exe` plus SHA-256. Installs for the current user to `%LOCALAPPDATA%\Programs\LaunchDesk`, creates Start menu and optional desktop shortcuts, and does not start the app by default. Exit the tray instance before update/uninstall. Uninstall retains user data and removes only login startup entries belonging to its install path. The installer is English; the application supports Chinese/English. Certificates are not configured, so current installers remain unsigned. Installation/update/uninstall scenarios were verified for earlier versions; this version reruns build/core/UI checks, not full installation acceptance or real-service tests.
 
 See [Project structure](docs/project-structure.md). Generated files belong under `artifacts/`.
 
 Tests use isolated directories and disposable processes. They cover output flooding, UTF-8 chunking, GBK, trailing partial lines, raw bytes, BAT paths/pause, npm, stdin, environment, dependencies, lifecycle races, restart limits, log failures and process-tree cleanup. Three real services remain untested at the user's request.
+
+The test inventory has 73 groups. Without a signing fixture, three groups are explicitly skipped; strict CI rejects skips. See [Local test evidence](docs/test-summary.md). Developers can run `./tests/Verify-Ui.ps1` and `./tests/Verify-Engineering.ps1`. Temporary self-signed trust roots are allowed only on disposable GitHub-hosted runners, never developer workstations.
 
 ```powershell
 artifacts/LaunchDesk-win-x64/LaunchDesk.exe --ui-smoke artifacts/ui.png
@@ -133,6 +146,30 @@ Use [Issues](https://github.com/hailaij/LaunchDesk/issues) or pull requests. Run
 [MIT](LICENSE). Runtime terms: [Third-party notices](THIRD-PARTY-NOTICES.md). Network and local data handling: [Privacy Policy](PRIVACY.md).
 
 ## Changelog
+
+### [0.6.0] - 2026-10-12
+
+#### Added
+
+- Local rotating error diagnostics, runtime retirement and atomic log exports, preserving existing APIs and configurations.
+- Explicit pass/fail/skip reports, isolated signing fixtures, bilingual UI and fatal process-cleanup CI.
+- SHA-pinned Actions, dependency locks, unified SDK/version sources and a strict signed-release pipeline.
+
+#### Fixed
+
+- Concurrent log locking, corrupt configuration recovery, retention maintenance and blocked standard input.
+- Windows command quoting, relative resource paths, npm preflight, stop/delete resource cleanup and exception recovery.
+- Distinct forced-termination exit codes and detailed console errors; corrupt log records are skipped and failed exports preserve the destination.
+
+#### Improved
+
+- Visible-row log virtualization retains row/character selection, copying, links and reading positions.
+- 73 test groups; CI rejects skips and uploads reports, screenshots and process-cleanup evidence.
+
+#### Limitations
+
+- Unsigned prerelease for manual installation only; in-app downloads remain disabled. Missing signing configuration blocks trusted publication.
+- Real-service acceptance is deferred. Extremely long visible lines still have layout costs; no installation rollback.
 
 ### [0.5.0] - 2026-10-11
 

@@ -26,7 +26,7 @@ foreach ($framework in $runtime.runtimeOptions.includedFrameworks) {
 }
 if (@(Get-ChildItem -LiteralPath $noticesRoot -File).Count -eq 0) { throw 'Runtime license files were not found.' }
 $versionText = ([xml](Get-Content -LiteralPath (Join-Path $projectRoot 'Directory.Build.props') -Raw)).Project.PropertyGroup.Version
-$zipPath = Join-Path $outputRoot ('LaunchDesk-' + $versionText + '-win-x64.zip')
+$zipPath = Join-Path $outputRoot ('LaunchDesk-v' + $versionText + '-win-x64.zip')
 Compress-Archive -Path (Join-Path $stageRoot '*') -DestinationPath $zipPath -Force
 New-Item -ItemType Directory -Path $publishRoot -Force | Out-Null
 Copy-Item -Path (Join-Path $stageRoot '*') -Destination $publishRoot -Recurse -Force

@@ -1,6 +1,6 @@
 # LaunchDesk
 
-Windows 启动项管理器，中文桌面界面。当前版本 **0.1.0**。
+Windows 启动项管理器，中文桌面界面。当前版本 **v0.1.0**（开发版本）。
 
 ![LaunchDesk](docs/images/main.png)
 
@@ -18,6 +18,8 @@ Windows 启动项管理器，中文桌面界面。当前版本 **0.1.0**。
 ## 运行
 
 面向 Windows 10/11 x64。自包含发布包自带 .NET 运行时，解压后运行 `LaunchDesk.exe`，请保留整个目录。
+
+从 [GitHub Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.1.0) 下载 `LaunchDesk-v0.1.0-win-x64.zip`。对应的 `.sha256` 文件用于校验下载完整性。
 
 首次运行为空列表，不自动添加或执行本机服务。点击添加图标创建启动项。关闭窗口会收起到托盘，彻底退出使用托盘菜单的“退出”；退出会停止全部受管进程并排空日志。
 
@@ -82,13 +84,19 @@ artifacts/LaunchDesk-win-x64/LaunchDesk.exe --ui-smoke-min artifacts/ui-minimum.
 
 `--ui-smoke` 使用独立测试数据目录，截图中的启动项不会执行。GitHub Actions 在 Windows 上构建、运行进程测试并生成自包含 ZIP。
 
+## 贡献
+
+欢迎通过 [Issues](https://github.com/hailaij/LaunchDesk/issues) 提交问题或功能建议，或通过 Pull Request 提交修改。提交前请运行上述构建和隔离测试，并避免提交私人配置、路径、环境变量和日志。
+
 ## 许可证
 
 LaunchDesk 使用 [MIT](LICENSE) 许可证。Windows/.NET 运行时按各自条款提供，详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
 
 ## 更新日志
 
-### 0.1.0 · 2026-10-11
+### [0.1.0] - 2026-10-11
+
+#### 新增
 
 - 首个可运行版本：启动项管理、实时与持久日志、Job Object 进程树清理。
 - 托盘、单实例、登录自启、配置备份和便携模式。

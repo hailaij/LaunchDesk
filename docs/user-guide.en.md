@@ -10,6 +10,10 @@ First use has no sample items. Existing user configuration and logs are retained
 
 Each item has its own resource, arguments, working directory, environment variables and encoding. For npm, use the directory containing the intended `package.json` and its start script. Shell scripts require an explicit executable interpreter. Folders group items without moving disk files. Dissolving a folder retains its items and logs.
 
+Item notes appear to the right, immediately before the run button. Long notes are truncated with a full-text tooltip and are included in item search. Double-click a note (including an empty cell) to edit inline; Enter or focus loss saves, Esc cancels. Column sorting is disabled to keep folder members below their headers; use drag-and-drop or the up/down buttons to reorder.
+
+Stop input delay accepts 0-300 seconds (default 0). For npm/BAT termination confirmation, enable **Send Ctrl+C before stop input**, enter Y, and set a delay such as 2 seconds. Stop timeout starts after sending input; early process exit skips any remaining delay and input. This is a fixed delay, not prompt detection. Without the checkbox, stop input is sent without a signal, preserving quit/exit commands. With no stop input, Ctrl+C is sent as before.
+
 Preflight checks validate paths, interpreters and simple npm scripts without executing commands. They also run before actual startup. Complex cmd expressions only receive basic checks. Passing preflight cannot guarantee the underlying service will succeed.
 
 Drag stopped items to reorder or join folders. Drop in empty list space to ungroup. Folders reorder but cannot nest. Dropped BAT/CMD, EXE, PS1 and SH files open an editor for confirmation; they do not move or auto-start.

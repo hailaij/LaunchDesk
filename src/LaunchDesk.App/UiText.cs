@@ -40,6 +40,11 @@ internal static class UiText
     }
     private const string Catalog = """
 语言|Language
+备注|Note
+退出输入延迟（秒）|Stop input delay (s)
+退出输入前先发送 Ctrl+C|Send Ctrl+C before stop input
+退出信号|Stop signal
+0–300 秒；输入发送后才开始计算停止超时，进程提前退出则不再发送|0-300 seconds; stop timeout starts after input. No input is sent if the process exits first.
 导入配置|Import configuration
 导出配置|Export configuration
 恢复配置备份|Restore backup

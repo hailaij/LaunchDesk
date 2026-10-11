@@ -2,11 +2,17 @@
 
 [Simplified Chinese](README.md) | [English](README.en.md)
 
-A Windows desktop manager for scripts, commands and applications, with real-time logs. Latest published version: **v0.4.0** (early development).
+A Windows desktop manager for scripts, commands and applications, with real-time logs. Latest published version: **v0.5.0** (early development).
 
 ![LaunchDesk](docs/images/main.png)
 
 ## Features
+
+### New and Fixed in v0.5.0
+
+- Right-aligned notes with search, full-text tooltips and inline double-click editing, including empty notes. Enter or focus loss saves; Esc cancels.
+- Stop input delay of 0-300 seconds, optionally preceded by Ctrl+C. Early process exit skips input; stop timeout begins after input. This is a fixed delay, not prompt detection.
+- Preserve folder hierarchy by disabling flat column sorting; drag and up/down reordering remain available. Improved note spacing and compact bilingual layouts.
 
 ### New in v0.4.0
 
@@ -43,7 +49,7 @@ A Windows desktop manager for scripts, commands and applications, with real-time
 
 Windows 10/11 x64. Self-contained packages include the .NET runtime. Keep the entire extracted directory and launch `LaunchDesk.exe`.
 
-Download `LaunchDesk-v0.4.0-win-x64-setup.exe` or the portable `LaunchDesk-v0.4.0-win-x64.zip` from [Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.4.0). SHA-256 sidecar files are provided. Current installers are unsigned.
+Download `LaunchDesk-v0.5.0-win-x64-setup.exe` or the portable `LaunchDesk-v0.5.0-win-x64.zip` from [Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.5.0). SHA-256 sidecar files are provided. Current installers are unsigned.
 
 First launch is empty. No local services are preconfigured or executed. Closing the window hides it to the tray. Use **Exit** in the tray menu to stop all managed processes and drain logs before upgrading. Single-instance activation may restore an already running older copy; window titles show the actual assembly version, and cross-version/path launches show a warning.
 
@@ -103,7 +109,7 @@ dotnet run --project tests/LaunchDesk.Tests -c Release -- --report artifacts/tes
 ./scripts/build-installer.ps1 -CompilerPath 'D:\tool\Inno Setup 6\ISCC.exe'
 ```
 
-Installer output: `artifacts/installers/LaunchDesk-v0.4.0-win-x64-setup.exe` plus SHA-256. Installs for the current user to `%LOCALAPPDATA%\Programs\LaunchDesk`, creates Start menu and optional desktop shortcuts, and does not start the app by default. Exit the tray instance before update/uninstall. Uninstall retains user data and removes only login startup entries belonging to its install path. The installer is English; the application supports Chinese/English. Certificates are not configured, so current installers remain unsigned.
+Installer output: `artifacts/installers/LaunchDesk-v0.5.0-win-x64-setup.exe` plus SHA-256. Installs for the current user to `%LOCALAPPDATA%\Programs\LaunchDesk`, creates Start menu and optional desktop shortcuts, and does not start the app by default. Exit the tray instance before update/uninstall. Uninstall retains user data and removes only login startup entries belonging to its install path. The installer is English; the application supports Chinese/English. Certificates are not configured, so current installers remain unsigned.
 
 See [Project structure](docs/project-structure.md). Generated files belong under `artifacts/`.
 
@@ -127,6 +133,27 @@ Use [Issues](https://github.com/hailaij/LaunchDesk/issues) or pull requests. Run
 [MIT](LICENSE). Runtime terms: [Third-party notices](THIRD-PARTY-NOTICES.md). Network and local data handling: [Privacy Policy](PRIVACY.md).
 
 ## Changelog
+
+### [0.5.0] - 2026-10-11
+
+#### Added
+
+- Item notes before the right-side run button, with search, full-text tooltips and double-click inline editing. Enter or focus loss saves; Esc cancels.
+- Stop input delay of 0-300 seconds and optional Ctrl+C before input. Early exit skips pending input; stop timeout starts after input. Defaults preserve legacy behavior.
+
+#### Fixed
+
+- Disable flat column sorting and clear stale sort state so folder members remain below their headers. Drag and up/down reordering are retained.
+- Increase spacing between Auto and Note headers and adjust compact Chinese/English column widths to retain complete action buttons.
+
+#### Improved
+
+- 42 isolated tests cover note/delay compatibility, stop signal/input timing and early exit. UI smoke tests cover note save/cancel, folder dragging and sorting recovery.
+
+#### Limitations
+
+- Stop input uses a fixed delay, not automatic Y/N prompt detection. Tune the delay using actual logs.
+- Installers remain unsigned and in-app downloads disabled. Real-service acceptance is deferred; no automatic installation.
 
 ### [0.4.0] - 2026-10-11
 

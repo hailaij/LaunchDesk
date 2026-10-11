@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -26,6 +27,16 @@ public sealed class ItemRow(LaunchItem item, bool isFolder = false, bool collaps
     public bool CanModify { get; private set; } = true;
     public LaunchItem Item { get; } = item;
     public string Name => Item.Name;
+    public string Note => Item.Note;
+    public bool IsEditingNote { get; private set; }
+    public string NoteText { get; set; } = item.Note;
+    public Visibility NoteVisibility => !IsFolder && !IsEditingNote ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility NoteEditorVisibility => IsEditingNote ? Visibility.Visible : Visibility.Collapsed;
+    public void SetEditingNote(bool value)
+    {
+        if (value) NoteText = Note;
+        IsEditingNote = value; PropertyChanged?.Invoke(this, new(null));
+    }
     public string StartupOrder => IsFolder ? "" : Item.StartupOrder.ToString();
     public bool IsRenaming { get; private set; }
     public string RenameText { get; set; } = item.Name;
@@ -111,8 +122,14 @@ public partial class MainWindow : Window
     }
     private void UpdateCompactLayout()
     {
-        var visibility = ActualWidth < 1100 ? Visibility.Collapsed : Visibility.Visible;
+        var visibility = ActualWidth < 1250 ? Visibility.Collapsed : Visibility.Visible;
         PidColumn.Visibility = visibility; ExitCodeColumn.Visibility = visibility;
+        DurationColumn.Visibility = ActualWidth < 1100 ? Visibility.Collapsed : Visibility.Visible;
+        ItemsGrid.Columns[0].Width = ActualWidth < 1100 ? 140 : 160;
+        ItemsGrid.Columns[1].Width = ActualWidth < 1100 ? 90 : 100;
+        ItemsGrid.Columns[2].Width = UiText.Language == "en-US" ? (ActualWidth < 1100 ? 120 : 140) : 110;
+        ItemsGrid.Columns[5].Width = 70;
+        ItemsGrid.Columns[9].Width = ActualWidth < 1100 ? 110 : 130;
     }
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
@@ -125,12 +142,25 @@ public partial class MainWindow : Window
                 throw new InvalidOperationException(T("首次启动空白数据测试失败。"));
             Capture(this, Path.ChangeExtension(smokePath, null) + "-empty.png");
             config.Items.AddRange([
-                new() { Name = T("聊天服务"), Kind = LaunchKind.Batch, Target = @"C:\Scripts\chat-service.cmd" },
+                new() { Name = T("聊天服务"), Kind = LaunchKind.Batch, Target = @"C:\Scripts\chat-service.cmd", Note = "Local service", StopInput = "Y", StopInputDelaySeconds = 2, SendStopSignalBeforeInput = true },
                 new() { Name = T("Node 服务"), Kind = LaunchKind.Command, Target = "npm", Arguments = "run start", WorkingDirectory = @"C:\Services\node" },
                 new() { Name = T("后台任务"), Kind = LaunchKind.PowerShell, Target = @"C:\Scripts\worker.ps1" }
             ]);
             var folder = new LaunchFolder { Name = T("聊天工具") }; config.Folders.Add(folder); config.Items[0].FolderId = folder.Id;
             Populate();
+            var sortedView = CollectionViewSource.GetDefaultView(rows);
+            sortedView.SortDescriptions.Add(new(nameof(ItemRow.IsFolder), ListSortDirection.Ascending));
+            if (((ItemRow)ItemsGrid.Items[0]).IsFolder) throw new InvalidOperationException("Flat sorting reproduction failed.");
+            Populate();
+            if (ItemsGrid.CanUserSortColumns || sortedView.SortDescriptions.Count != 0 || !((ItemRow)ItemsGrid.Items[0]).IsFolder
+                || ((ItemRow)ItemsGrid.Items[1]).Item.FolderId != folder.Id)
+                throw new InvalidOperationException("Folder hierarchy recovery failed.");
+            var otherFolder = new LaunchFolder { Name = "Folder reorder test" }; config.Folders.Add(otherFolder); Populate();
+            ApplyRowDrop(rows.Single(x => x.IsFolder && x.Item.Id == otherFolder.Id), rows.Single(x => x.IsFolder && x.Item.Id == folder.Id));
+            if (((ItemRow)ItemsGrid.Items[0]).Item.Id != otherFolder.Id || ((ItemRow)ItemsGrid.Items[1]).Item.Id != folder.Id
+                || ((ItemRow)ItemsGrid.Items[2]).Item.FolderId != folder.Id)
+                throw new InvalidOperationException("Folder drag separated members.");
+            config.Folders.Remove(otherFolder); Populate();
             var folderRow = rows.Single(x => x.IsFolder);
             ToggleFolderClick(new Button { DataContext = folderRow }, new RoutedEventArgs(Button.ClickEvent));
             if (rows.Any(x => x.Item.Id == config.Items[0].Id)) throw new InvalidOperationException(T("文件夹收起测试失败。"));
@@ -153,7 +183,13 @@ public partial class MainWindow : Window
             if (!LogBox.Text.Contains(T("暂停期间捕获"))) throw new InvalidOperationException(T("恢复显示测试失败。"));
             Capture(this, smokePath);
             var editor = new ItemDialog(ConfigurationStore.Clone(config.Items[0]), config.Items, config.Folders) { Owner = this };
-            editor.Show(); await Task.Delay(250); Capture(editor, Path.ChangeExtension(smokePath, null) + "-editor.png"); editor.Close();
+            editor.Show(); await Task.Delay(250); Capture(editor, Path.ChangeExtension(smokePath, null) + "-editor.png");
+            if (editor.Content is Border { Child: Grid editorGrid } && editorGrid.Children[0] is ScrollViewer { Content: StackPanel editorForm })
+            {
+                editorForm.Children.OfType<Grid>().Single(x => x.Children[0] is TextBlock label && label.Text == T("退出信号")).BringIntoView();
+                await Task.Delay(250); Capture(editor, Path.ChangeExtension(smokePath, null) + "-stop-options.png");
+            }
+            editor.Close();
             var settings = new SettingsDialog(config.Preferences, portable, store.Root, () => store.BackupNow(config)) { Owner = this };
             settings.Show(); await Task.Delay(250); Capture(settings, Path.ChangeExtension(smokePath, null) + "-settings.png"); settings.Close();
             var about = new AboutDialog { Owner = this };
@@ -194,6 +230,20 @@ public partial class MainWindow : Window
             renameRow.RenameText = T("原位重命名"); CommitName(renameRow);
             if (store.Load().Items.Single(x => x.Id == secondMember.Id).Name != T("原位重命名"))
                 throw new InvalidOperationException(T("原位重命名持久化测试失败。"));
+            var noteRow = rows.Single(x => x.Item.Id == secondMember.Id);
+            noteRow.SetEditingNote(true); noteRow.NoteText = "Inline note";
+            await Task.Delay(250); Capture(this, Path.ChangeExtension(smokePath, null) + "-note-edit.png");
+            CommitNote(noteRow);
+            if (store.Load().Items.Single(x => x.Id == secondMember.Id).Note != "Inline note")
+                throw new InvalidOperationException("Inline note persistence failed.");
+            noteRow = rows.Single(x => x.Item.Id == secondMember.Id);
+            noteRow.SetEditingNote(true); noteRow.NoteText = "Discarded note";
+            NoteEditorKeyDown(new TextBox { DataContext = noteRow }, new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(this), 0, Key.Escape) { RoutedEvent = Keyboard.KeyDownEvent });
+            if (noteRow.IsEditingNote || noteRow.Note != "Inline note") throw new InvalidOperationException("Note cancel failed.");
+            noteRow.SetEditingNote(true); noteRow.NoteText = "Saved on blur";
+            NoteEditorLostFocus(new TextBox { DataContext = noteRow }, new KeyboardFocusChangedEventArgs(Keyboard.PrimaryDevice, 0, null, ItemsGrid));
+            if (store.Load().Items.Single(x => x.Id == secondMember.Id).Note != "Saved on blur")
+                throw new InvalidOperationException("Note focus-loss save failed.");
             var updatePrompt = new UpdateDialog(new(new Version(9, 0, 0), "v9.0.0", T("更新界面测试：不会访问网络或执行安装。"), new Uri("https://github.com/hailaij/LaunchDesk/releases/tag/v9.0.0"))) { Owner = this };
             updatePrompt.Show(); await Task.Delay(250); Capture(updatePrompt, Path.ChangeExtension(smokePath, null) + "-update-prompt.png"); updatePrompt.Close();
             var originalLanguage = config.Preferences.Language;
@@ -268,13 +318,16 @@ public partial class MainWindow : Window
     public void Restore() { if (exiting) return; Show(); WindowState = WindowState.Normal; Activate(); ShowPendingUpdate(); }
     private void Populate(Guid? select = null)
     {
-        var headers = new[] { "名称", "类型", "状态", "PID", "运行时长", "顺序", "退出码", "资源 / 命令", "自启", "操作" };
+        // Flat DataGrid sorting separates members from their folder headers.
+        CollectionViewSource.GetDefaultView(rows).SortDescriptions.Clear();
+        foreach (var column in ItemsGrid.Columns) column.SortDirection = null;
+        var headers = new[] { "名称", "类型", "状态", "PID", "运行时长", "顺序", "退出码", "资源 / 命令", "自启", "备注", "操作" };
         for (var index = 0; index < headers.Length; index++) ItemsGrid.Columns[index].Header = T(headers[index]);
-        ItemsGrid.Columns[2].Width = UiText.Language == "en-US" ? 140 : 110;
+        UpdateCompactLayout();
         select ??= Selected?.Item.Id;
         rows.Clear();
         bool Match(LaunchItem item) => ItemSearch.Text.Length == 0 || item.Name.Contains(ItemSearch.Text, StringComparison.OrdinalIgnoreCase)
-            || item.Target.Contains(ItemSearch.Text, StringComparison.OrdinalIgnoreCase);
+            || item.Target.Contains(ItemSearch.Text, StringComparison.OrdinalIgnoreCase) || item.Note.Contains(ItemSearch.Text, StringComparison.OrdinalIgnoreCase);
         foreach (var folder in config.Folders)
         {
             var matchesFolder = folder.Name.Contains(ItemSearch.Text, StringComparison.OrdinalIgnoreCase);
@@ -417,6 +470,28 @@ public partial class MainWindow : Window
     private void NameEditorLostFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: ItemRow row }) CommitName(row);
+    }
+    private void NoteClick(object sender, MouseButtonEventArgs e)
+    {
+        if (FindParent<TextBox>(e.OriginalSource as DependencyObject) is not null) return;
+        if (e.ClickCount != 2 || sender is not FrameworkElement { DataContext: ItemRow { IsFolder: false } row }) return;
+        e.Handled = true; dragRow = null; row.SetEditingNote(true);
+    }
+    private void CommitNote(ItemRow row)
+    {
+        if (!row.IsEditingNote) return;
+        var note = row.NoteText.Trim(); row.SetEditingNote(false);
+        SaveOrRollback(() => config.Items.Single(x => x.Id == row.Item.Id).Note = note);
+    }
+    private void NoteEditorKeyDown(object sender, KeyEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: ItemRow row }) return;
+        if (e.Key == Key.Enter) { e.Handled = true; CommitNote(row); }
+        else if (e.Key == Key.Escape) { e.Handled = true; row.SetEditingNote(false); ItemsGrid.Focus(); }
+    }
+    private void NoteEditorLostFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: ItemRow row }) CommitNote(row);
     }
     private void ItemsDragStart(object s, MouseButtonEventArgs e)
     {

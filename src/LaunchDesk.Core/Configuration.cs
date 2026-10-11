@@ -22,6 +22,7 @@ public sealed class LaunchItem
     public Guid? FolderId { get; set; }
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = "新启动项";
+    public string Note { get; set; } = "";
     public LaunchKind Kind { get; set; } = LaunchKind.Batch;
     public string Target { get; set; } = "";
     public string Arguments { get; set; } = "";
@@ -37,6 +38,8 @@ public sealed class LaunchItem
     public int StartupOrder { get; set; }
     public int StopTimeoutSeconds { get; set; } = 10;
     public string StopInput { get; set; } = "";
+    public int StopInputDelaySeconds { get; set; }
+    public bool SendStopSignalBeforeInput { get; set; }
     public ReadinessOptions Readiness { get; set; } = new();
 }
 
@@ -165,9 +168,10 @@ public sealed class ConfigurationStore
                 throw new InvalidDataException("启动项所属文件夹不存在：" + item.Name);
             if (item.Id == Guid.Empty || !Enum.IsDefined(item.Kind) || string.IsNullOrWhiteSpace(item.Name)
                 || string.IsNullOrWhiteSpace(item.Target) || item.Environment is null || item.Dependencies is null
-                || item.DelaySeconds is < 0 or > 3600 || item.StopTimeoutSeconds is < 1 or > 300 || item.StartupOrder is < 0 or > 9999)
+                || item.DelaySeconds is < 0 or > 3600 || item.StopTimeoutSeconds is < 1 or > 300 || item.StartupOrder is < 0 or > 9999
+                || item.StopInputDelaySeconds is < 0 or > 300 || item.Note is null || item.Note.Length > 1000)
                 throw new InvalidDataException("启动项配置无效：" + item.Name);
-            foreach (var value in new[] { item.Name, item.Target, item.Arguments, item.WorkingDirectory, item.Interpreter, item.StopInput })
+            foreach (var value in new[] { item.Name, item.Note, item.Target, item.Arguments, item.WorkingDirectory, item.Interpreter, item.StopInput })
                 if (value is null || value.Contains('\0')) throw new InvalidDataException("配置包含空值或 NUL。");
             _ = System.Text.Encoding.GetEncoding(item.Encoding);
             if (item.Environment.Any(x => string.IsNullOrWhiteSpace(x.Key) || x.Key.Contains('=') ||

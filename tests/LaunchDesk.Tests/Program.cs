@@ -37,6 +37,12 @@ if (args.Length > 0 && args[0] != "--report")
                 }
                 return 0;
             case "input": Console.Write("READY"); Console.Out.Flush(); var input = Console.ReadLine(); Console.Write("GOT:" + input); return 0;
+            case "stop-prompt":
+                Console.Write("READY"); Console.Out.Flush();
+                while (!File.Exists(args[2])) await Task.Delay(20);
+                await Task.Delay(400); Console.Write("(Y/N)?"); Console.Out.Flush();
+                if (args.Length > 3) return 0;
+                Console.Write("GOT:" + Console.ReadLine()); return 0;
             case "gbk":
                 using (var output = Console.OpenStandardOutput())
                     foreach (var value in Encoding.GetEncoding("gbk").GetBytes("中文GBK尾部")) output.WriteByte(value);
@@ -494,6 +500,48 @@ await Test("Dual-stream flood, split UTF-8, unterminated tail, export", async ()
     Assert(File.ReadAllText(export) == expectedExport, "export preserves every record, including split tail");
     manager.Logs(item.Id).ClearPanel(); Assert(manager.Logs(item.Id).Snapshot().Length == 0, "clear panel");
     Assert(Directory.GetFiles(manager.Logs(item.Id).DirectoryPath).Length > 0, "clear retains disk history");
+});
+await Test("Stop input delay and notes compatibility, validation, roundtrip", () =>
+{
+    var legacy = JsonSerializer.Deserialize<LaunchItem>("{}")!;
+    Assert(legacy.Note == "" && legacy.StopInputDelaySeconds == 0 && !legacy.SendStopSignalBeforeInput, "legacy behavior");
+    var item = Worker("--worker input"); item.Note = "备注 / note"; item.StopInputDelaySeconds = 2; item.SendStopSignalBeforeInput = true;
+    var copy = ConfigurationStore.Clone(item);
+    Assert(copy.Note == item.Note && copy.StopInputDelaySeconds == 2 && copy.SendStopSignalBeforeInput, "roundtrip");
+    foreach (var delay in new[] { -1, 301 })
+    {
+        copy.StopInputDelaySeconds = delay;
+        try { ConfigurationStore.Validate(new() { Items = [copy] }); throw new Exception("invalid delay accepted"); } catch (InvalidDataException) { }
+    }
+    copy.StopInputDelaySeconds = 0; copy.Note = new string('x', 1001);
+    try { ConfigurationStore.Validate(new() { Items = [copy] }); throw new Exception("long note accepted"); } catch (InvalidDataException) { }
+    return Task.CompletedTask;
+});
+await Test("Signal then delayed stop input, timeout starts after input", async () =>
+{
+    var marker = Path.Combine(root, "stop-signal");
+    var item = Worker("--worker stop-prompt " + LaunchCommand.Quote(marker));
+    item.StopInput = "Y"; item.StopInputDelaySeconds = 2; item.SendStopSignalBeforeInput = true;
+    var signals = 0;
+    await using var manager = new ProcessManager(new() { Items = [item] }, root, _ => { signals++; File.WriteAllText(marker, "signal"); return Task.CompletedTask; });
+    await manager.StartAsync(item.Id); await Until(() => manager.Logs(item.Id).Snapshot().Any(x => x.Text.Contains("READY")));
+    var started = DateTimeOffset.Now;
+    await manager.StopAsync(item.Id);
+    var records = manager.Logs(item.Id).Snapshot();
+    Assert(signals == 1 && records.Any(x => x.Channel == "stdout" && x.Text.Contains("GOT:Y")), "signal and response");
+    Assert(records.Single(x => x.Channel == "stdin").Time - started >= TimeSpan.FromSeconds(1.9), "not sent early");
+    Assert(manager.Snapshot(item.Id).ExitCode == 0 && !records.Any(x => x.Text.Contains("优雅停止超时")), "delay does not exhaust stop timeout");
+});
+await Test("Stop delay ends early on process exit without sending input", async () =>
+{
+    var marker = Path.Combine(root, "stop-early-exit");
+    var item = Worker("--worker stop-prompt " + LaunchCommand.Quote(marker) + " exit");
+    item.StopInput = "Y"; item.StopInputDelaySeconds = 10; item.SendStopSignalBeforeInput = true;
+    await using var manager = new ProcessManager(new() { Items = [item] }, root, _ => { File.WriteAllText(marker, "signal"); return Task.CompletedTask; });
+    await manager.StartAsync(item.Id); await Until(() => manager.Logs(item.Id).Snapshot().Any(x => x.Text.Contains("READY")));
+    var watch = Stopwatch.StartNew(); await manager.StopAsync(item.Id);
+    Assert(watch.Elapsed.TotalSeconds < 5 && manager.Snapshot(item.Id).ExitCode == 0, "early exit skips delay");
+    Assert(!manager.Logs(item.Id).Snapshot().Any(x => x.Channel == "stdin"), "no late input");
 });
 await Test("Interactive input, environment, working directory", async () =>
 {

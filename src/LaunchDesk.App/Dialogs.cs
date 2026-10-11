@@ -57,6 +57,7 @@ public sealed class ItemDialog : Window
         var form = new StackPanel();
         FormLayout.Section(form, T("基本信息"));
         var name = FormLayout.Text(item.Name); FormLayout.Row(form, T("名称"), name);
+        var note = FormLayout.Text(item.Note); note.MaxLength = 1000; FormLayout.Row(form, T("备注"), note);
         var folderOptions = new[] { new LaunchFolder { Id = Guid.Empty, Name = T("未分组") } }.Concat(folders).ToArray();
         var folder = new ComboBox { ItemsSource = folderOptions, DisplayMemberPath = "Name", SelectedItem = folderOptions.FirstOrDefault(x => x.Id == item.FolderId) ?? folderOptions[0] };
         FormLayout.Row(form, T("所属文件夹"), folder);
@@ -99,6 +100,11 @@ public sealed class ItemDialog : Window
         numeric.Children.Add(timeout); numeric.Children.Add(new TextBlock { Text = T("秒停止超时"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) });
         FormLayout.Row(form, T("启动 / 停止"), numeric);
         var stop = FormLayout.Text(item.StopInput); FormLayout.Row(form, T("退出输入（可选）"), stop);
+        var stopDelay = FormLayout.Text(item.StopInputDelaySeconds.ToString());
+        stopDelay.ToolTip = T("0–300 秒；输入发送后才开始计算停止超时，进程提前退出则不再发送");
+        FormLayout.Row(form, T("退出输入延迟（秒）"), stopDelay);
+        var signalFirst = new CheckBox { Content = T("退出输入前先发送 Ctrl+C"), IsChecked = item.SendStopSignalBeforeInput };
+        FormLayout.Row(form, T("退出信号"), signalFirst);
         var options = new WrapPanel();
         var auto = new CheckBox { Content = T("随管理器启动"), IsChecked = item.AutoStart };
         var restart = new CheckBox { Content = T("退出后自动重启"), IsChecked = item.AutoRestart };
@@ -125,9 +131,11 @@ public sealed class ItemDialog : Window
         void ApplyFields()
         {
             item.Name = name.Text.Trim(); item.Kind = (LaunchKind)kind.SelectedIndex; item.Target = target.Text.Trim();
+            item.Note = note.Text.Trim();
             var folderId = ((LaunchFolder)folder.SelectedItem).Id; item.FolderId = folderId == Guid.Empty ? null : folderId;
             item.Arguments = args.Text; item.WorkingDirectory = directory.Text.Trim(); item.Interpreter = interpreter.Text.Trim(); item.Encoding = encoding.Text.Trim();
             item.DelaySeconds = int.Parse(delay.Text); item.StopTimeoutSeconds = int.Parse(timeout.Text); item.StopInput = stop.Text;
+            item.StopInputDelaySeconds = int.Parse(stopDelay.Text); item.SendStopSignalBeforeInput = signalFirst.IsChecked == true;
             item.StartupOrder = int.Parse(startupOrder.Text);
             item.AutoStart = auto.IsChecked == true; item.AutoRestart = restart.IsChecked == true; item.ShowWindow = visible.IsChecked == true;
             item.Dependencies = dependencies.SelectedItems.Cast<LaunchItem>().Select(x => x.Id).ToList();

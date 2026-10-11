@@ -118,15 +118,23 @@ public sealed class ProcessManager : IAsyncDisposable
                     if (await Task.WhenAny(exit, cancelled).ConfigureAwait(false) == cancelled)
                     {
                         Update(r, RunStatus.Stopping);
-                        if (item.StopInput.Length > 0)
-                        {
-                            try { await SendInputAsync(item.Id, item.StopInput).WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false); }
-                            catch (Exception error) { r.Logs.Write("system", "退出输入发送失败：" + error.Message + "\n"); }
-                        }
-                        else
+                        if (item.StopInput.Length == 0 || item.SendStopSignalBeforeInput)
                         {
                             try { await signal(native.Id).WaitAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false); }
                             catch (Exception error) { r.Logs.Write("system", "退出信号发送失败：" + error.Message + "\n"); }
+                        }
+                        if (item.StopInput.Length > 0 && !exit.IsCompleted)
+                        {
+                            if (item.StopInputDelaySeconds > 0)
+                            {
+                                r.Logs.Write("system", $"等待 {item.StopInputDelaySeconds} 秒后发送退出输入。\n");
+                                await Task.WhenAny(exit, Task.Delay(TimeSpan.FromSeconds(item.StopInputDelaySeconds))).ConfigureAwait(false);
+                            }
+                            if (!exit.IsCompleted)
+                            {
+                                try { await SendInputAsync(item.Id, item.StopInput).WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false); }
+                                catch (Exception error) { r.Logs.Write("system", "退出输入发送失败：" + error.Message + "\n"); }
+                            }
                         }
                         if (await Task.WhenAny(exit, Task.Delay(TimeSpan.FromSeconds(item.StopTimeoutSeconds))).ConfigureAwait(false) != exit)
                         { r.Logs.Write("system", "优雅停止超时，终止受管进程树。\n"); native.Kill(); }

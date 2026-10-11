@@ -17,7 +17,29 @@ public static class Program
         var name = "Local\\LaunchDesk-" + WindowsIdentity.GetCurrent().User!.Value + (smoke ? "-smoke-" + Guid.NewGuid() : "");
         using var mutex = new Mutex(true, name, out var created);
         using var activate = new EventWaitHandle(false, EventResetMode.AutoReset, name + "-activate");
-        if (!created && !smoke) { activate.Set(); return 0; }
+        if (!created && !smoke)
+        {
+            var currentVersion = typeof(App).Assembly.GetName().Version!.ToString(3);
+            foreach (var process in Process.GetProcessesByName("LaunchDesk"))
+            {
+                using (process)
+                {
+                    if (process.Id == Environment.ProcessId) continue;
+                    try
+                    {
+                        var path = process.MainModule?.FileName;
+                        if (path is null) continue;
+                        var runningVersion = FileVersionInfo.GetVersionInfo(path).ProductVersion ?? "未知";
+                        if (runningVersion.Split('+')[0] != currentVersion || !string.Equals(path, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase))
+                            MessageBox.Show($"已有 LaunchDesk 实例正在运行，当前启动不会替换它。\n\n运行中：{runningVersion}\n位置：{path}\n\n准备启动：v{currentVersion}\n位置：{Environment.ProcessPath}\n\n请先从旧实例的托盘菜单选择“退出”，再打开新版本。退出将停止旧实例管理的启动项。", "LaunchDesk 版本提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                        break;
+                    }
+                    catch (System.ComponentModel.Win32Exception) { }
+                    catch (InvalidOperationException) { }
+                }
+            }
+            activate.Set(); return 0;
+        }
         var app = new App(); app.InitializeComponent();
         try
         {

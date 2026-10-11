@@ -47,6 +47,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<ItemRow> rows = [];
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private Forms.NotifyIcon? tray;
+    private System.Drawing.Icon? trayIcon;
     private readonly bool portable;
     private readonly string? smokePath;
     private readonly bool autostart;
@@ -63,6 +64,8 @@ public partial class MainWindow : Window
         SystemEvents.UserPreferenceChanged += SystemThemeChanged;
         ItemsGrid.ItemsSource = rows; ChannelFilter.SelectedIndex = 0;
         var version = typeof(App).Assembly.GetName().Version!.ToString(3);
+        Title = "LaunchDesk v" + version;
+        SetResourceReference(IconProperty, "AppIcon");
         ModeText.Text = (portable ? "便携模式" : "用户模式") + " · v" + version;
         timer.Tick += (_, _) => { try { Refresh(); } catch (Exception error) { timer.Stop(); ShowError(error); } }; timer.Start();
         Loaded += OnLoaded;
@@ -71,6 +74,8 @@ public partial class MainWindow : Window
     {
         if (smokePath is not null)
         {
+            CreateTray();
+            if (Icon is null || trayIcon is null) throw new InvalidOperationException("应用图标测试失败。");
             config.Items.AddRange([
                 new() { Name = "聊天服务", Kind = LaunchKind.Batch, Target = @"C:\Scripts\chat-service.cmd" },
                 new() { Name = "Node 服务", Kind = LaunchKind.Command, Target = "npm", Arguments = "run start", WorkingDirectory = @"C:\Services\node" },
@@ -118,7 +123,9 @@ public partial class MainWindow : Window
     }
     private void CreateTray()
     {
-        tray = new Forms.NotifyIcon { Text = "LaunchDesk", Icon = System.Drawing.SystemIcons.Application, Visible = true };
+        using var iconStream = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/Assets/LaunchDesk.ico"))!.Stream;
+        trayIcon = new System.Drawing.Icon(iconStream, 32, 32);
+        tray = new Forms.NotifyIcon { Text = Title, Icon = trayIcon, Visible = true };
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("打开 LaunchDesk", null, (_, _) => Dispatcher.Invoke(Restore));
         menu.Items.Add("全部启动", null, (_, _) => Dispatcher.InvokeAsync(async () => await Execute(() => manager.StartAllAsync())));
@@ -335,6 +342,6 @@ public partial class MainWindow : Window
         if (exiting) return; exiting = true; SystemEvents.UserPreferenceChanged -= SystemThemeChanged; timer.Stop(); IsEnabled = false; StatusText.Text = "正在停止进程并保存日志…";
         try { await manager.DisposeAsync(); }
         catch (Exception error) { MessageBox.Show(this, error.Message, "退出清理失败", MessageBoxButton.OK, MessageBoxImage.Error); }
-        finally { tray?.Dispose(); Close(); System.Windows.Application.Current.Shutdown(); }
+        finally { tray?.Dispose(); trayIcon?.Dispose(); Close(); System.Windows.Application.Current.Shutdown(); }
     }
 }

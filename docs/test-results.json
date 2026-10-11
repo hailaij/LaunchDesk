@@ -2,76 +2,76 @@
   {
     "name": "Configuration atomic save, backup, import, cycles",
     "passed": true,
-    "elapsedMs": 99
+    "elapsedMs": 92
   },
   {
     "name": "Theme preference compatibility, roundtrip, validation",
     "passed": true,
-    "elapsedMs": 44
+    "elapsedMs": 40
   },
   {
     "name": "Dual-stream flood, split UTF-8, unterminated tail, export",
     "passed": true,
-    "elapsedMs": 380
+    "elapsedMs": 359
   },
   {
     "name": "Interactive input, environment, working directory",
     "passed": true,
-    "elapsedMs": 653
+    "elapsedMs": 679
   },
   {
     "name": "BAT relative path, paths with spaces, pause input",
     "passed": true,
-    "elapsedMs": 266
+    "elapsedMs": 262
   },
   {
     "name": "npm run start in isolated project",
     "passed": true,
-    "elapsedMs": 875
+    "elapsedMs": 785
   },
   {
     "name": "Process tree stop, restart, repeated launches",
     "passed": true,
-    "elapsedMs": 4044
+    "elapsedMs": 3950
   },
   {
     "name": "Root exit preserves tracked child until stop",
     "passed": true,
-    "elapsedMs": 1624
+    "elapsedMs": 1611
   },
   {
     "name": "Owner forced termination kills root and grandchild",
     "passed": true,
-    "elapsedMs": 324
+    "elapsedMs": 333
   },
   {
     "name": "Dependency order, pending startup cancellation",
     "passed": true,
-    "elapsedMs": 2547
+    "elapsedMs": 2496
   },
   {
     "name": "Startup failure surfaces and log failure kills process",
     "passed": true,
-    "elapsedMs": 43
+    "elapsedMs": 14
   },
   {
     "name": "Log retention, ANSI display, persistent history",
     "passed": true,
-    "elapsedMs": 25
+    "elapsedMs": 8
   },
   {
     "name": "Concurrent starts, bulk cancellation, blocked input stop",
     "passed": true,
-    "elapsedMs": 1509
+    "elapsedMs": 1470
   },
   {
     "name": "Auto restart stops after five consecutive exits",
     "passed": true,
-    "elapsedMs": 30811
+    "elapsedMs": 30920
   },
   {
     "name": "PowerShell and Git Bash isolated scripts",
     "passed": true,
-    "elapsedMs": 974
+    "elapsedMs": 985
   }
 ]

@@ -32,6 +32,7 @@ internal static class FormLayout
     }
     public static void Finish(Window window, Panel form, Action save)
     {
+        window.SetResourceReference(Window.IconProperty, "AppIcon");
         var grid = new Grid();
         grid.RowDefinitions.Add(new()); grid.RowDefinitions.Add(new() { Height = GridLength.Auto });
         grid.Children.Add(new ScrollViewer { Content = form, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(0, 0, 14, 0) });

@@ -1,6 +1,6 @@
 # LaunchDesk
 
-Windows 启动项管理器，中文桌面界面。当前版本 **v0.2.0**（开发版本）。
+Windows 启动项管理器，中文桌面界面。当前版本 **v0.2.1**（开发版本）。
 
 ![LaunchDesk](docs/images/main.png)
 
@@ -20,13 +20,15 @@ Windows 启动项管理器，中文桌面界面。当前版本 **v0.2.0**（开�
 
 面向 Windows 10/11 x64。自包含发布包自带 .NET 运行时，解压后运行 `LaunchDesk.exe`，请保留整个目录。
 
-从 [GitHub Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.2.0) 下载 `LaunchDesk-v0.2.0-win-x64.zip`。对应的 `.sha256` 文件用于校验下载完整性。
+从 [GitHub Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.2.1) 下载 `LaunchDesk-v0.2.1-win-x64.zip`。对应的 `.sha256` 文件用于校验下载完整性。
 
 在设置的“外观”中选择浅色、深色或跟随系统，保存后立即生效。旧版本配置无需手动迁移，未指定主题时默认跟随系统。升级时请先从托盘退出旧版本，再解压到新目录运行；便携模式用户需将原目录的 `portable.flag` 和 `data\` 复制到新版本目录，原数据保留备份。
 
 首次运行为空列表，不自动添加或执行本机服务。点击添加图标创建启动项。关闭窗口会收起到托盘，彻底退出使用托盘菜单的“退出”；退出会停止全部受管进程并排空日志。
 
 应用默认以普通用户权限运行，不绕过 PowerShell 执行策略，也不自动提权。
+
+单实例机制会唤醒已经运行的实例，不会热替换旧版程序。窗口标题显示实际版本；新版发现其他版本或其他目录的实例时会提示其版本和路径。仅关闭窗口会隐藏到托盘，升级前必须使用托盘菜单的“退出”（这会停止旧实例管理的启动项）。资源管理器中 EXE 的文件类型仍是 Windows 标准的“应用程序”。
 
 ### 配置示例
 
@@ -96,6 +98,18 @@ artifacts/LaunchDesk-win-x64/LaunchDesk.exe --ui-smoke-min artifacts/ui-minimum.
 LaunchDesk 使用 [MIT](LICENSE) 许可证。Windows/.NET 运行时按各自条款提供，详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
 
 ## 更新日志
+
+### [0.2.1] - 2026-10-11
+
+#### 修复
+
+- 补齐多尺寸 EXE 应用图标，主窗口、配置窗口、设置窗口与托盘统一使用产品图标。
+- 跨版本或跨目录启动时提示已运行实例的版本与路径，避免把唤醒旧实例误认为新版 UI 未更新。
+
+#### 优化
+
+- 主窗口标题与托盘提示显示实际程序集版本，EXE 增加产品名称和描述元数据。
+- 补充升级退出说明和 Windows 文件类型说明，旧发布包保持不变。
 
 ### [0.2.0] - 2026-10-11
 

@@ -28,6 +28,11 @@ runner 的 CurrentUser/Root，用 Windows SDK signtool 签署测试 apphost，�
 MSBuild 参数、signing.json 或发布物。不要伪造 runner 环境变量在日常电脑运行此脚本。
 这不是绕过 Windows 信任链：生产 `AuthenticodeVerifier` 未添加接受自签名的分支。
 
+2026-10-12 云端准备阶段发现 CurrentUser Root 导入停滞；改用 Windows
+[`certutil -user -f -addstore`](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/certutil)
+在受限制的临时 runner 内完成无交互导入，并增加阶段日志与五分钟验收超时。
+这不允许在开发电脑运行，也不改变生产发行者 pin 或生产验签策略。
+
 ## CI 与工程规范
 
 - `windows.yml` 用锁文件还原、零警告构建、真实签名样本、核心测试、双语界面和异常清理。

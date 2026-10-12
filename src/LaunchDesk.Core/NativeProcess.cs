@@ -6,7 +6,7 @@ using Microsoft.Win32.SafeHandles;
 
 namespace LaunchDesk.Core;
 
-public sealed class NativeProcess : IDisposable
+public sealed class NativeProcess : IManagedProcess
 {
     public const int ForcedExitCode = unchecked((int)0xE04C4401);
     private SafeKernelHandle? job;
@@ -106,6 +106,7 @@ public sealed class NativeProcess : IDisposable
         { Check(TerminateJobObject(job, unchecked((uint)ForcedExitCode))); ForcedTermination = true; }
     }
     public void CloseInput() { try { Input.Dispose(); } catch (IOException) { } }
+    public Task SignalAsync(Func<int, Task> fallback) => fallback(Id);
     public static bool SendControlSignal(int pid) => SendControlSignal(pid, out _);
     public static bool SendControlSignal(int pid, out string detail)
     {

@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory)][string]$PublishDirectory,
     [Parameter(Mandatory)][string]$PreviousPublishDirectory,
     [string]$CompilerPath = 'D:\tool\Inno Setup 6\ISCC.exe',
-    [string]$OutputDirectory = 'artifacts/verification/installer'
+    [string]$OutputDirectory = 'artifacts/verification/installer',
+    [ValidateSet('english','chinesesimplified')][string]$Language = 'english'
 )
 $ErrorActionPreference = 'Stop'
 $output = [IO.Path]::GetFullPath($OutputDirectory)
@@ -44,9 +45,10 @@ function Compile([string]$Source, [string]$Version, [string]$Name) {
     return (Join-Path $directory "LaunchDesk-v$Version-win-x64-setup.exe")
 }
 function Install([string]$Installer, [string]$Destination, [string]$Name) {
-    Run $Installer @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', '/TASKS=""', ('/DIR="' + (Scoped $Destination) + '"'), ('/LOG="' + (Join-Path $sandbox ($Name + '.log')) + '"'))
+    Run $Installer @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', '/TASKS=""', ('/LANG=' + $Language), ('/DIR="' + (Scoped $Destination) + '"'), ('/LOG="' + (Join-Path $sandbox ($Name + '.log')) + '"'))
     if (-not (Test-Path -LiteralPath $registry)) { throw 'Isolated installation not registered' }
     if ((Get-ItemProperty -LiteralPath $registry).InstallLocation.TrimEnd('\') -ne $Destination) { throw 'Wrong isolated install path' }
+    if ((Get-ItemProperty -LiteralPath $registry).'Inno Setup: Language' -ne $Language) { throw 'Wrong installer language' }
 }
 function Uninstall([string]$Destination, [string]$Name) {
     Run (Join-Path $Destination 'unins000.exe') @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', ('/LOG="' + (Join-Path $sandbox ($Name + '.log')) + '"'))
@@ -62,11 +64,14 @@ function VerifyPayload([string]$Destination) {
     }
 }
 $activeInstallation = $null
-$result = [ordered]@{ status = 'running'; version = $version; candidateSetup = $setup; candidateSha256 = (Get-FileHash -LiteralPath $setup).Hash;
+$result = [ordered]@{ status = 'running'; version = $version; language = $Language; candidateSetup = $setup; candidateSha256 = (Get-FileHash -LiteralPath $setup).Hash;
     isolatedIdentity = $identity; sandbox = $sandbox; scope = 'Same installer script and release payload; isolated AppId/mutex, no shortcuts. Not a production-identity or Windows 10 acceptance.' }
 try {
     $newInstaller = Compile $publish $version 'new-compiler'
-    $oldInstaller = Compile $previous '0.7.0' 'old-compiler'
+    $previousVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $previous 'LaunchDesk.exe')).FileVersion -replace '\.0$', ''
+    if ($previousVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Previous payload version is invalid' }
+    $result.previousVersion = $previousVersion
+    $oldInstaller = Compile $previous $previousVersion 'old-compiler'
     $fresh = Join-Path $sandbox 'fresh-install'; $activeInstallation = $fresh
     Install $newInstaller $fresh 'fresh'
     VerifyPayload $fresh

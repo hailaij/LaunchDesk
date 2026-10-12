@@ -1,6 +1,7 @@
 namespace LaunchDesk;
 public partial class App : System.Windows.Application
 {
+    public App() => Accessibility.Initialize();
     private LaunchDesk.Core.ErrorDiagnostics? diagnostics;
     private MainWindow? managedWindow;
     public void ConfigureErrors(LaunchDesk.Core.ErrorDiagnostics errors, MainWindow window)

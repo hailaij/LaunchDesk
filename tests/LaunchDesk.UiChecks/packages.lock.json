@@ -9,7 +9,10 @@
         }
       },
       "launchdesk.core": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "System.IO.Pipes.AccessControl": "[10.0.0, )"
+        }
       }
     }
   }

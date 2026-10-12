@@ -1,5 +1,7 @@
 # Privacy Policy / 隐私政策
 
+v0.8.0 additions / v0.8.0 新增功能：用户明确启用的提权启动通过本地认证管道向 UAC 助手传递所选配置和原始进程输入输出，不保存密码、不上传。独立 Windows 服务将所选配置复制到受保护的 ProgramData 目录，日志和备份独立保存，卸载服务后仍保留。Explicit elevation uses authenticated local pipes without storing passwords or uploading data. Independent Windows service configuration, logs and backups are stored in protected ProgramData and retained after service uninstall.
+
 Last updated / 最后更新：2026-10-12
 
 Project / 项目：[LaunchDesk](https://github.com/hailaij/LaunchDesk)
@@ -17,6 +19,7 @@ Version v0.6.0 is an unsigned prerelease with local error diagnostics and retent
 LaunchDesk does not require an application account and does not implement advertising, usage analytics, or automatic crash-report uploads. It stores the following data locally to provide its functionality:
 
 - Launch-item names, groups, file paths, commands, arguments, working directories, environment variables, dependencies, and preferences.
+- Development crash recovery stores active item GUIDs and a dirty-session flag in the data directory's `session.json`. CLI control uses a local, current-user/login-session named pipe; commands and status are not sent to a remote service.
 - Captured process output and error logs, system messages, and input records. These may contain personal information, credentials, or other sensitive content produced by your commands.
 - Configuration backups, exported files, and, downloaded update packages.
 - Local exception diagnostics under `diagnostics/errors.log`, including error messages and stack traces that may contain private paths. Approximately 2 MiB per file, with up to three rotated files; no automatic upload.
@@ -33,6 +36,7 @@ LaunchDesk does not upload your launch configuration, environment variables, cap
 - **Startup checks:** A background request to the same GitHub endpoint runs at startup when the startup-update preference is enabled. This preference is enabled by default and can be disabled in Settings. No installation or package download starts merely because an update check succeeds.
 - **Update downloads:** Clicking the download button requests the installer from the project's GitHub Releases URL and approved GitHub asset domains. Downloading requires a configured trusted publisher and suitable release metadata. Windows signature validation may contact certificate-chain or revocation services operated by certificate authorities or Windows trust infrastructure. Downloads are not silently installed.
 - **User-configured readiness checks, in v0.4.0:** TCP or HTTP checks connect to the host or URL you configure, which may be local or remote. The destination receives normal connection/request information. A log-keyword check does not itself make network requests.
+- **Health monitoring (in development):** Monitoring is disabled by default for each item. When enabled, it repeatedly connects to your configured TCP host or sends HTTP GET requests to your configured URL after the item is ready. The destination receives ordinary connection/request information; results and state changes are stored locally. You can disable monitoring per item. This does not upload data to project maintainers.
 - **Opening links:** Repository, feedback, release, and log links open in your browser only after your action. For log links, Ctrl+click is required. Your browser and the destination website handle their own cookies, accounts, and network data. LaunchDesk does not prefetch log links.
 
 GitHub's handling of its own service data is described in the [GitHub Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement). Other destinations and certificate services have their own policies.
@@ -68,6 +72,7 @@ v0.6.0 为未签名预发布，增加本地异常诊断及日志保留维护。v
 LaunchDesk 无需应用账号，不提供广告、使用统计或自动崩溃报告上传。为实现功能，应用在本地保存：
 
 - 启动项名称、分组、路径、命令、参数、工作目录、环境变量、依赖和偏好设置。
+- 崩溃恢复在数据目录的 `session.json` 保存运行项 GUID 及异常退出标记；CLI 控制使用当前用户、当前登录会话内的本地命名管道，不向远程服务发送命令或状态。
 - 进程标准输出、错误日志、系统消息及输入记录；这些内容可能包含脚本产生的个人信息、凭据或其他敏感内容。
 - 配置备份、导出文件，以及更新下载包。
 - `diagnostics/errors.log` 中的本地异常诊断，包括错误及调用栈，可能含私人路径。每份约 2 MiB，另保留最多 3 份轮转文件，不自动上传。
@@ -84,6 +89,7 @@ LaunchDesk 不对配置和日志进行加密。文件访问由 Windows 账号、
 - **启动检查：** 启动更新检查设置开启时，应用在启动后向相同 GitHub 接口发送后台请求；此设置默认开启，可在设置中关闭。检查成功不会直接触发下载安装。
 - **更新下载：** 用户点击下载后，从项目 GitHub Releases 地址及允许的 GitHub 资产域名请求安装包。下载需具备受信任发行者配置和合适的发布信息。Windows 验签可能访问证书机构或 Windows 信任基础设施的证书链、吊销查询服务。不静默安装。
 - **就绪检测：** TCP 或 HTTP 检测访问用户配置的主机或地址，可能为本地或远程目标；目标可收到正常连接或请求信息。日志关键词检测本身不产生网络请求。
+- **健康监控：** 每个启动项默认关闭监控。启用后，启动项就绪时开始定期连接用户配置的 TCP 主机或向配置的 URL 发送 HTTP GET 请求；目标可收到正常连接或请求信息。检测结果及状态变化保存在本地，可按项关闭监控，不向项目维护者上传数据。
 - **打开链接：** 用户操作后，仓库、反馈、发布页面及日志链接才会在浏览器打开；日志链接要求 Ctrl+点击，不预先访问。浏览器和目标网站自行处理其 Cookie、账号及网络数据。
 
 GitHub 自身的数据处理见 [GitHub 隐私声明](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement)。其他网站及证书服务适用各自的隐私政策。

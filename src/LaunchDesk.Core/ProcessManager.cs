@@ -3,7 +3,10 @@ using System.Text;
 
 namespace LaunchDesk.Core;
 
-public sealed record RuntimeSnapshot(RunStatus Status, int? Pid, int? ExitCode, DateTimeOffset? Started, string Detail, bool Active);
+public sealed record RuntimeSnapshot(RunStatus Status, int? Pid, int? ExitCode, DateTimeOffset? Started, string Detail, bool Active)
+{
+    public HealthSnapshot Health { get; init; } = new(HealthStatus.Disabled);
+}
 public sealed class ProcessManager : IAsyncDisposable
 {
     private sealed class Runtime(LogStore logs)
@@ -16,17 +19,20 @@ public sealed class ProcessManager : IAsyncDisposable
         public int? Pid, ExitCode;
         public DateTimeOffset? Started;
         public string Detail = "";
+        public HealthSnapshot Health = new(HealthStatus.Disabled);
         public CancellationTokenSource? Cancellation;
         public Task Completion = Task.CompletedTask;
         public Task Ready = Task.CompletedTask;
-        public NativeProcess? Current;
+        public IManagedProcess? Current;
         public volatile bool Retired;
     }
     private readonly ConcurrentDictionary<Guid, Runtime> runtimes = new();
     private readonly object registryGate = new();
     private readonly string root;
     private readonly Func<int, Task> signal;
+    private readonly Func<LaunchItem, CancellationToken, Task<IManagedProcess>> launch;
     public Configuration Config { get; }
+    public SessionJournal? Session { get; set; }
     private volatile bool shuttingDown;
     private Task? disposal;
     private int bulkGeneration;
@@ -34,9 +40,12 @@ public sealed class ProcessManager : IAsyncDisposable
     private readonly Task maintenance;
     private readonly ConcurrentQueue<string> maintenanceWarnings = new();
     public string[] MaintenanceWarnings => maintenanceWarnings.ToArray();
-    public ProcessManager(Configuration config, string root, Func<int, Task>? signal = null)
+    public ProcessManager(Configuration config, string root, Func<int, Task>? signal = null,
+        Func<LaunchItem, CancellationToken, Task<IManagedProcess>>? launch = null)
     {
         Config = config; this.root = root; this.signal = signal ?? (_ => Task.CompletedTask);
+        this.launch = launch ?? ((item, _) => item.RequireElevation
+            ? throw new InvalidOperationException("当前宿主不支持按项提权。") : Task.FromResult<IManagedProcess>(new NativeProcess(item)));
         maintenance = Task.Run(async () =>
         {
             using var timer = new PeriodicTimer(TimeSpan.FromHours(1));
@@ -102,7 +111,7 @@ public sealed class ProcessManager : IAsyncDisposable
     public RuntimeSnapshot Snapshot(Guid id)
     {
         var r = Get(id);
-        lock (r.Sync) return new(r.Status, r.Pid, r.ExitCode, r.Started, r.Detail, !r.Completion.IsCompleted);
+        lock (r.Sync) return new(r.Status, r.Pid, r.ExitCode, r.Started, r.Detail, !r.Completion.IsCompleted) { Health = r.Health };
     }
     private static void Update(Runtime r, RunStatus status, string detail = "")
     { lock (r.Sync) { r.Status = status; r.Detail = detail; } }
@@ -140,6 +149,7 @@ public sealed class ProcessManager : IAsyncDisposable
             if (!r.Completion.IsCompleted) readyTask = r.Ready;
             else
             {
+                Session?.MarkActive(id);
                 r.Cancellation?.Dispose(); r.Cancellation = new();
                 var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 readyTask = r.Ready = ready.Task;
@@ -154,20 +164,25 @@ public sealed class ProcessManager : IAsyncDisposable
     private async Task RunSessionAsync(LaunchItem item, Runtime r, TaskCompletionSource ready, CancellationToken token)
     {
         var failureCount = 0;
+        var healthLimiter = new HealthRestartLimiter();
         try
         {
             if (item.DelaySeconds > 0) await Task.Delay(TimeSpan.FromSeconds(item.DelaySeconds), token).ConfigureAwait(false);
             while (!token.IsCancellationRequested)
             {
-                NativeProcess? native = null;
+                IManagedProcess? native = null;
                 Task? pumps = null;
                 Task? exit = null;
+                Task<bool>? healthTask = null;
+                using var healthCancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
+                var healthRestart = false;
+                lock (r.Sync) r.Health = new(item.Health.Enabled ? HealthStatus.Waiting : HealthStatus.Disabled);
                 var start = DateTimeOffset.Now;
                 var exitCode = -1;
                 Exception? failure = null;
                 try
                 {
-                    native = new NativeProcess(item);
+                    native = await launch(item, token).ConfigureAwait(false);
                     lock (r.Sync) { r.Current = native; r.Pid = native.Id; r.Started = start; r.ExitCode = null; }
                     var active = native;
                     exit = native.WaitForExitAsync();
@@ -184,13 +199,26 @@ public sealed class ProcessManager : IAsyncDisposable
                         r.Logs.Write("system", "服务就绪检测通过。\n");
                     }
                     Update(r, RunStatus.Running, item.Readiness.Kind == ReadinessKind.None ? "" : "服务已就绪"); ready.TrySetResult();
+                    if (item.Health.Enabled)
+                        healthTask = HealthMonitor.RunAsync(item.Health, item.Health.Endpoint(item.Readiness), healthLimiter, state =>
+                        {
+                            HealthSnapshot previous;
+                            lock (r.Sync) { previous = r.Health; r.Health = state; }
+                            if (previous.Status != state.Status || previous.RestartSuppressed != state.RestartSuppressed)
+                                r.Logs.Write("system", "健康状态：" + state.Status + (state.Detail.Length == 0 ? "" : "；" + state.Detail) + "\n");
+                        }, healthCancellation.Token);
                     var cancelled = Task.Delay(Timeout.Infinite, token);
-                    if (await Task.WhenAny(exit, cancelled).ConfigureAwait(false) == cancelled)
+                    var winner = await Task.WhenAny(exit, cancelled, (Task?)healthTask ?? Task.Delay(Timeout.Infinite, healthCancellation.Token)).ConfigureAwait(false);
+                    if (healthTask is not null && winner == healthTask) healthRestart = await healthTask.ConfigureAwait(false);
+                    healthCancellation.Cancel();
+                    if (healthTask is not null) await healthTask.ConfigureAwait(false);
+                    if (healthRestart) r.Logs.Write("system", "健康异常，准备重启当前启动项。\n");
+                    if (token.IsCancellationRequested || healthRestart)
                     {
                         Update(r, RunStatus.Stopping);
                         if (item.StopInput.Length == 0 || item.SendStopSignalBeforeInput)
                         {
-                            try { await signal(native.Id).WaitAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false); }
+                            try { await native.SignalAsync(signal).WaitAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false); }
                             catch (Exception error) { r.Logs.Write("system", "退出信号发送失败：" + error.Message + "\n"); }
                         }
                         if (item.StopInput.Length > 0 && !exit.IsCompleted)
@@ -227,12 +255,19 @@ public sealed class ProcessManager : IAsyncDisposable
                 }
                 finally
                 {
+                    healthCancellation.Cancel();
+                    if (healthTask is not null) { try { await healthTask.ConfigureAwait(false); } catch (Exception error) { failure ??= error; } }
                     await r.InputGate.WaitAsync().ConfigureAwait(false);
                     try { lock (r.Sync) { r.Current = null; r.Pid = null; r.ExitCode = exitCode; } native?.Dispose(); }
                     finally { r.InputGate.Release(); }
                 }
                 if (token.IsCancellationRequested) { Update(r, RunStatus.Stopped, failure?.Message ?? ""); return; }
                 Update(r, failure is not null || exitCode != 0 ? RunStatus.Failed : RunStatus.Exited, failure?.Message ?? "");
+                if (healthRestart && failure is null)
+                {
+                    Update(r, RunStatus.Restarting, "健康异常重启");
+                    continue;
+                }
                 // Never auto-restart a process whose logs could not be persisted.
                 if (!item.AutoRestart || failure is IOException or UnauthorizedAccessException || !ready.Task.IsCompletedSuccessfully) return;
                 if (DateTimeOffset.Now - start > TimeSpan.FromMinutes(1)) failureCount = 0;
@@ -244,7 +279,13 @@ public sealed class ProcessManager : IAsyncDisposable
         }
         catch (OperationCanceledException) { Update(r, RunStatus.Stopped); }
         catch (Exception error) { Update(r, RunStatus.Failed, error.Message); ready.TrySetException(error); }
-        finally { if (token.IsCancellationRequested) Update(r, RunStatus.Stopped); ready.TrySetCanceled(); }
+        finally
+        {
+            try { Session?.MarkInactive(item.Id); }
+            catch (Exception error) { Update(r, RunStatus.Failed, "Session journal: " + error.Message); }
+            lock (r.Sync) r.Health = new(item.Health.Enabled ? HealthStatus.Waiting : HealthStatus.Disabled);
+            if (token.IsCancellationRequested) Update(r, RunStatus.Stopped); ready.TrySetCanceled();
+        }
     }
     private static async Task PumpAsync(Stream stream, string encoding, LogStore logs, string channel, Action<string, string> observe)
     {
@@ -266,7 +307,7 @@ public sealed class ProcessManager : IAsyncDisposable
         try
         {
             if (r.Retired) throw new ObjectDisposedException("启动项已删除。");
-            NativeProcess native;
+            IManagedProcess native;
             lock (r.Sync) native = r.Current ?? throw new InvalidOperationException("启动项未运行。");
             var encoding = Config.Items.Single(x => x.Id == id).Encoding;
             var bytes = OutputDecoder.Resolve(encoding).GetBytes(text + "\r\n");
@@ -328,14 +369,16 @@ public sealed class ProcessManager : IAsyncDisposable
         foreach (var item in members.Values) Visit(item);
         foreach (var id in ordered.AsEnumerable().Reverse()) await StopAsync(id).ConfigureAwait(false);
     }
-    public async Task StartAllAsync(bool autoOnly = false)
+    public async Task StartAllAsync(bool autoOnly = false, CancellationToken cancellationToken = default)
     {
         List<Exception> errors = [];
         var generation = Volatile.Read(ref bulkGeneration);
         foreach (var item in Config.StartupItems().ToArray().Where(x => !autoOnly || x.AutoStart))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (generation != Volatile.Read(ref bulkGeneration) || shuttingDown) break;
-            try { await StartAsync(item.Id).ConfigureAwait(false); }
+            try { await StartAsync(item.Id, cancellationToken).ConfigureAwait(false); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (OperationCanceledException) when (generation != Volatile.Read(ref bulkGeneration) || shuttingDown) { break; }
             catch (Exception error) { errors.Add(new Exception(item.Name + ": " + error.Message, error)); }
         }

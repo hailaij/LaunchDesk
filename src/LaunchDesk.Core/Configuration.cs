@@ -6,6 +6,25 @@ namespace LaunchDesk.Core;
 public enum LaunchKind { Batch, Executable, Command, PowerShell, Shell }
 public enum RunStatus { Stopped, Starting, Running, Stopping, Exited, Failed, Restarting }
 public enum ReadinessKind { None, Tcp, Http, Log }
+public enum HealthStatus { Disabled, Waiting, Healthy, Unhealthy }
+
+public sealed class HealthOptions
+{
+    public bool Enabled { get; set; }
+    public bool ReuseReadiness { get; set; } = true;
+    public ReadinessKind Kind { get; set; } = ReadinessKind.Tcp;
+    public string Host { get; set; } = "127.0.0.1";
+    public int Port { get; set; } = 3000;
+    public string Url { get; set; } = "http://127.0.0.1:3000/";
+    public int IntervalSeconds { get; set; } = 30;
+    public int TimeoutSeconds { get; set; } = 5;
+    public int FailureThreshold { get; set; } = 3;
+    public int RecoveryThreshold { get; set; } = 2;
+    public bool AutoRestart { get; set; }
+    public int RestartCooldownSeconds { get; set; } = 60;
+    public int MaxRestartsPerTenMinutes { get; set; } = 3;
+    public ReadinessOptions Endpoint(ReadinessOptions readiness) => ReuseReadiness ? readiness : new() { Kind = Kind, Host = Host, Port = Port, Url = Url };
+}
 
 public sealed class ReadinessOptions
 {
@@ -34,6 +53,7 @@ public sealed class LaunchItem
     public bool AutoStart { get; set; }
     public bool AutoRestart { get; set; }
     public bool ShowWindow { get; set; }
+    public bool RequireElevation { get; set; }
     public int DelaySeconds { get; set; }
     public int StartupOrder { get; set; }
     public int StopTimeoutSeconds { get; set; } = 10;
@@ -41,6 +61,7 @@ public sealed class LaunchItem
     public int StopInputDelaySeconds { get; set; }
     public bool SendStopSignalBeforeInput { get; set; }
     public ReadinessOptions Readiness { get; set; } = new();
+    public HealthOptions Health { get; set; } = new();
 }
 
 public sealed class Preferences
@@ -184,6 +205,13 @@ public sealed class ConfigurationStore
             throw new InvalidDataException("启动项为空、过多或 ID 重复。");
         foreach (var item in config.Items)
         {
+            if (item.Health is not { } health || health.Host is null || health.Url is null
+                || health.Host.Contains('\0') || health.Url.Contains('\0') || health.Kind is not (ReadinessKind.Tcp or ReadinessKind.Http)
+                || health.IntervalSeconds is < 1 or > 3600 || health.TimeoutSeconds is < 1 or > 300
+                || health.FailureThreshold is < 1 or > 100 || health.RecoveryThreshold is < 1 or > 100
+                || health.RestartCooldownSeconds is < 1 or > 3600 || health.MaxRestartsPerTenMinutes is < 1 or > 10
+                || health.AutoRestart && !health.Enabled)
+                throw new InvalidDataException("健康监控配置无效：" + item.Name);
             if (item.Readiness is not { } readiness || !Enum.IsDefined(readiness.Kind)
                 || readiness.TimeoutSeconds is < 1 or > 300
                 || readiness.Host is null || readiness.Url is null || readiness.Keyword is null
@@ -196,6 +224,17 @@ public sealed class ConfigurationStore
                 throw new InvalidDataException("HTTP 就绪检测需要不含用户名密码的 http/https 地址。");
             if (readiness.Kind == ReadinessKind.Log && (string.IsNullOrEmpty(readiness.Keyword) || readiness.Keyword.Length > 4096))
                 throw new InvalidDataException("日志就绪关键词长度须为 1–4096 个字符。");
+            if (health.Enabled)
+            {
+                var endpoint = health.Endpoint(readiness);
+                if (endpoint.Kind is not (ReadinessKind.Tcp or ReadinessKind.Http))
+                    throw new InvalidDataException("健康监控需要 TCP 或 HTTP 地址，不能复用日志或关闭的就绪检测。");
+                if (endpoint.Kind == ReadinessKind.Tcp && (string.IsNullOrWhiteSpace(endpoint.Host) || endpoint.Port is < 1 or > 65535))
+                    throw new InvalidDataException("健康监控 TCP 主机或端口无效。");
+                if (endpoint.Kind == ReadinessKind.Http && (!Uri.TryCreate(endpoint.Url, UriKind.Absolute, out var healthUri)
+                    || healthUri.Scheme is not ("http" or "https") || healthUri.UserInfo.Length != 0))
+                    throw new InvalidDataException("健康监控需要不含用户名密码的 HTTP/HTTPS 地址。");
+            }
             if (config.Folders.Any(x => x.Id == item.Id)) throw new InvalidDataException("文件夹与启动项 ID 重复。");
             if (item.FolderId is { } folder && !config.Folders.Any(x => x.Id == folder))
                 throw new InvalidDataException("启动项所属文件夹不存在：" + item.Name);

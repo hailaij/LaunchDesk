@@ -42,6 +42,8 @@ AppMutex={#InstallerMutex}
 CloseApplications=no
 RestartApplications=no
 UsePreviousAppDir=yes
+ShowLanguageDialog=yes
+UsePreviousLanguage=yes
 #ifdef SignedBuild
 SignedUninstaller=yes
 SignedUninstallerDir={#SigningDir}
@@ -51,9 +53,20 @@ SignedUninstaller=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "chinesesimplified"; MessagesFile: "Languages\ChineseSimplified.isl"
+
+[CustomMessages]
+english.DesktopIcon=Create a desktop shortcut
+english.Shortcuts=Shortcuts:
+english.LaunchApp=Launch LaunchDesk (may start configured services)
+english.ExitBeforeUninstall=Exit LaunchDesk from its tray menu before uninstalling. Exiting stops managed processes. User configuration and logs will be preserved. Independently installed Windows services must be uninstalled separately.
+chinesesimplified.DesktopIcon=创建桌面快捷方式
+chinesesimplified.Shortcuts=快捷方式：
+chinesesimplified.LaunchApp=启动 LaunchDesk（可能启动已配置的启动项）
+chinesesimplified.ExitBeforeUninstall=请先从托盘菜单退出 LaunchDesk，再卸载。退出会停止桌面管理的进程；配置和日志将保留。独立安装的 Windows 服务需单独卸载。
 
 [Tasks]
-Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:DesktopIcon}"; GroupDescription: "{cm:Shortcuts}"; Flags: unchecked
 
 [Files]
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Excludes: "data\*,portable.flag"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -63,14 +76,14 @@ Name: "{userprograms}\LaunchDesk"; Filename: "{app}\LaunchDesk.exe"; WorkingDir:
 Name: "{userdesktop}\LaunchDesk"; Filename: "{app}\LaunchDesk.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\LaunchDesk.exe"; Description: "Launch LaunchDesk (may start configured services)"; Flags: nowait postinstall skipifsilent unchecked
+Filename: "{app}\LaunchDesk.exe"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent unchecked
 
 [Code]
 function InitializeUninstall(): Boolean;
 begin
   Result := not CheckForMutexes('{#InstallerMutex}');
   if not Result then
-    MsgBox('Exit LaunchDesk from its tray menu before uninstalling. Exiting stops managed services. User configuration and logs will be preserved.', mbError, MB_OK);
+    MsgBox(ExpandConstant('{cm:ExitBeforeUninstall}'), mbError, MB_OK);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

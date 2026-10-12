@@ -7,6 +7,13 @@ using LaunchDesk.Core;
 namespace LaunchDesk;
 public static class Program
 {
+    public static string HostPath => Path.Combine(AppContext.BaseDirectory, "LaunchDesk.Host.exe");
+    public static Task<IManagedProcess> LaunchAsync(LaunchItem item, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        return item.RequireElevation ? ElevationBroker.StartAsync(item, HostPath, token)
+            : Task.FromResult<IManagedProcess>(new NativeProcess(item));
+    }
     [STAThread]
     public static int Main(string[] args)
     {

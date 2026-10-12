@@ -4,7 +4,7 @@ $project = Split-Path $PSScriptRoot -Parent
 $checker = Join-Path $project 'tools/LaunchDesk.ReleaseChecks/bin/Release/net10.0-windows/LaunchDesk.ReleaseChecks.exe'
 if (-not (Test-Path -LiteralPath $checker)) { throw 'Build ReleaseChecks first' }
 switch ($Mode) {
-    App { $files = @('LaunchDesk.exe', 'LaunchDesk.dll', 'LaunchDesk.Core.dll') | ForEach-Object { Join-Path $Directory $_ } }
+    App { $files = @('LaunchDesk.exe', 'LaunchDesk.dll', 'LaunchDesk.Core.dll', 'LaunchDesk.Cli.exe', 'LaunchDesk.Cli.dll', 'LaunchDesk.Host.exe', 'LaunchDesk.Host.dll') | ForEach-Object { Join-Path $Directory $_ } }
     Uninstaller {
         $files = @(Get-ChildItem -LiteralPath $Directory -Filter 'uninst-*.e32' -File | Select-Object -ExpandProperty FullName)
         if ($files.Count -ne 1) { throw 'Expected exactly one signed uninstaller' }

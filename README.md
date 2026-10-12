@@ -2,13 +2,22 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-Windows 启动项管理器。当前版本 **v0.7.1**（未签名预发布，0.x 开发阶段），支持中英文界面。
+Windows 启动项管理器。当前版本 **v0.8.0**（未签名预发布，0.x 开发阶段），支持中英文界面。
 
 **发布状态：**本版本为未签名预发布，仅供手动下载和安装。可信更新流水线在缺少正式签名配置时仍会阻断发布；测试证书不会用于生产信任。见 [可信度与工程化验收](docs/trust-and-engineering.md)。
 
 ![LaunchDesk](docs/images/main.png)
 
+[当前版本界面截图](docs/screenshots.md)（v0.8.0；隔离示例数据，不是首次安装配置）。
+
 ## 功能
+
+### v0.8.0 新增与修复
+
+- 健康监控、CLI 和崩溃恢复；按项 UAC 提权与独立 LocalService 后台服务。
+- 读屏名称、表单标签、键盘焦点、F2 原位编辑与文件夹方向键操作；中英文安装器。
+- 服务数据和桌面数据分离，桌面升级不自动替换服务。真实 UAC/SCM、读屏软件与 Win10 实机仍待验收；见 [服务与无障碍说明](docs/service-accessibility-installer.md)。
+- 服务相对路径校验、CLI 查询句柄释放及残留发布目录隔离修复，详见 [本版复查](docs/release-v0.8.0.md)。
 
 ### v0.7.1 修复
 
@@ -69,7 +78,7 @@ Windows 启动项管理器。当前版本 **v0.7.1**（未签名预发布，0.x 
 
 面向 Windows 10/11 x64。自包含发布包自带 .NET 运行时，解压后运行 `LaunchDesk.exe`，请保留整个目录。
 
-从 [GitHub Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.7.1) 手动下载 `LaunchDesk-v0.7.1-win-x64-setup.exe` 安装程序，或 `LaunchDesk-v0.7.1-win-x64.zip` 免安装包。各文件附带 `.sha256` 校验文件。本版本为未签名预发布，仅手动安装，不提供可信应用内更新。哈希不替代发行者签名。
+从 [GitHub Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.8.0) 手动下载 `LaunchDesk-v0.8.0-win-x64-setup.exe` 安装程序，或 `LaunchDesk-v0.8.0-win-x64.zip` 免安装包。各文件附带 `.sha256` 校验文件。本版本为未签名预发布，仅手动安装，不提供可信应用内更新。哈希不替代发行者签名。
 
 在设置的“外观”中选择浅色、深色或跟随系统，保存后立即生效。旧版本配置无需手动迁移，未指定主题时默认跟随系统。升级时请先从托盘退出旧版本，再解压到新目录运行；便携模式用户需将原目录的 `portable.flag` 和 `data\` 复制到新版本目录，原数据保留备份。
 
@@ -93,7 +102,7 @@ Windows 启动项管理器。当前版本 **v0.7.1**（未签名预发布，0.x 
 
 BAT 未指定工作目录时，默认使用 BAT 所在目录。命令类型按 cmd 语法执行，npm 无需改成 EXE。Shell 类型必须明确指定解释器，例如 Git 的 `bin\bash.exe`；不要使用 WSL 的启动器代替 Git Bash。解释器应是可直接启动的 EXE。
 
-环境变量每行 `NAME=VALUE`；参数按所选解释器的语法填写。UTF-8 是默认编码，传统 Windows 程序可以选择 GBK。编码同时用于输出显示和标准输入；JSONL 原始字节不受该选择影响。
+环境变量每行 `NAME=VALUE`；参数按所选解释器的语法填写。新项默认自动编码：优先 UTF-8，无效字节时切换系统 ANSI；传统 Windows 程序可显式选择 GBK。已有编码不变；自动模式的标准输入为 UTF-8，显式编码同时用于显示和输入。JSONL 原始字节不受该选择影响。
 
 ### 数据与日志
 
@@ -125,7 +134,7 @@ BAT 未指定工作目录时，默认使用 BAT 所在目录。命令类型按 c
 
 拖拽运行中的启动项被禁用。拖到文件夹加入分组，拖到启动项前调整顺序并采用目标分组，拖到列表空白处移出分组。文件夹可拖拽排序，不支持嵌套。拖入文件会打开编辑窗口，Shell 仍需指定解释器。启动前检查不执行命令；复杂 cmd 表达式仍交由 cmd 解释，检查通过不保证服务自身不会报错。
 
-首版不包含按项提权、WSL/Docker 内部生命周期管理、Windows 服务托管或远程管理。启动器交由外部服务、已有 GUI 单实例进程或其他宿主管理的任务，可能不属于 Job 范围。GUI 程序只有实际写入 stdout/stderr 的数据可以捕获；仅写日志文件、未刷新缓冲、断电和存储故障不能承诺无损。
+按项提权每次请求 UAC，不保存密码；独立 LocalService 托管只支持后台脚本/控制台程序。不包含 WSL/Docker 内部生命周期或远程管理。启动器交由外部服务、已有 GUI 单实例进程或其他宿主管理的任务，可能不属于 Job 范围。GUI 程序只有实际写入 stdout/stderr 的数据可以捕获；仅写日志文件、未刷新缓冲、断电和存储故障不能承诺无损。
 
 ## 开发与验证
 
@@ -140,13 +149,13 @@ BAT 未指定工作目录时，默认使用 BAT 所在目录。命令类型按 c
 ./scripts/build-installer.ps1 -CompilerPath 'D:\tool\Inno Setup 6\ISCC.exe'
 ```
 
-输出为 `artifacts/installers/LaunchDesk-v0.7.1-win-x64-setup.exe` 及 SHA-256 校验文件。本版验证相同脚本和发布文件的隔离首次安装、升级数据保留及卸载；测试仅覆盖独立安装身份，不覆盖正在使用的正式安装。Windows 10 实机及真实服务验收暂缓，详见本版 Release 的验证范围。
+输出为 `artifacts/installers/LaunchDesk-v0.8.0-win-x64-setup.exe` 及 SHA-256 校验文件。本版验证相同脚本和发布文件的隔离首次安装、升级数据保留及卸载；测试仅覆盖独立安装身份，不覆盖正在使用的正式安装。Windows 10 实机及真实服务验收暂缓，详见本版 Release 的验证范围。
 
-默认安装到 `%LOCALAPPDATA%\Programs\LaunchDesk`，仅当前用户，无需管理员权限；创建开始菜单快捷方式，可选桌面快捷方式。完成后默认不启动应用，避免自动执行已配置服务。更新或卸载前请先从托盘退出实例；旧版便携程序需手动退出。卸载保留配置、日志、备份和便携数据，仅移除属于此安装路径的登录自启命令。安装器界面目前为英文，应用支持中英文切换。未配置代码签名证书，生成的安装器不会带发行者签名。
+默认安装到 `%LOCALAPPDATA%\Programs\LaunchDesk`，仅当前用户，无需管理员权限；创建开始菜单快捷方式，可选桌面快捷方式。完成后默认不启动应用，避免自动执行已配置服务。更新或卸载前请先从托盘退出实例；旧版便携程序需手动退出。卸载保留配置、日志、备份和便携数据，仅移除属于此安装路径的登录自启命令。安装器支持简体中文与英文，应用支持中英文切换。独立服务的注册、运行文件和数据不会随桌面卸载移除，应先在服务管理中卸载服务。未配置代码签名证书，生成的安装器不会带发行者签名。
 
 目录用途与本地预览位置见 [项目结构](docs/project-structure.md)。生成产物统一放在 `artifacts/`，源码、测试、脚本及文档保持独立。
 
-需要 .NET SDK **10.0.401** 和 Windows x64。应用没有第三方 NuGet 包依赖；发布阶段从官方 NuGet 源还原 .NET 自包含运行时包。
+需要 .NET SDK **10.0.401** 和 Windows x64。Host 使用 Microsoft 的 `System.ServiceProcess.ServiceController` 10.0.0（含 EventLog 依赖），依赖由锁文件固定；发布阶段从官方 NuGet 源还原 .NET 自包含运行时包。
 
 ```powershell
 dotnet restore LaunchDesk.slnx --locked-mode
@@ -166,7 +175,7 @@ artifacts/LaunchDesk-win-x64/LaunchDesk.exe --ui-smoke-min artifacts/ui-minimum.
 
 `--ui-smoke` 使用独立测试数据目录，截图中的启动项不会执行。GitHub Actions 还会验证签名样本、双语截图像素、虚拟化、异常恢复与进程清理，并上传真实报告。
 
-当前开发测试清单为 81 组；无签名样本时 3 组明确跳过。CI 的 `--fail-on-skip` 拒绝任何跳过，历史报告见 [测试证据](docs/test-summary.md)。开发电脑可运行 `./tests/Verify-Ui.ps1` 和 `./tests/Verify-Engineering.ps1`；CI 自签证书脚本仅允许临时 GitHub-hosted runner。当前提交、CI 与构建资产验收见 v0.7.1 Release 的验证部分。
+当前主测试清单为 104 组；无签名样本时 3 组明确跳过。CI 的 `--fail-on-skip` 拒绝任何跳过，历史报告见 [测试证据](docs/test-summary.md)。开发电脑可运行 `./tests/Verify-Ui.ps1` 和 `./tests/Verify-Engineering.ps1`；CI 自签证书脚本仅允许临时 GitHub-hosted runner。当前提交、CI 与构建资产验收见 v0.8.0 Release 及 [本版复查](docs/release-v0.8.0.md)。重复打包须使用新的输出目录，非空发布目录会被拒绝。
 
 ## 贡献
 
@@ -179,6 +188,22 @@ LaunchDesk 使用 [MIT](LICENSE) 许可证。Windows/.NET 运行时按各自条�
 隐私与联网说明见 [隐私政策 / Privacy Policy](PRIVACY.md)。
 
 ## 更新日志
+
+### [0.8.0] - 2026-10-12
+
+#### 新增
+- 持续 TCP/HTTP 健康监控、状态提示及默认关闭的限频自动重启。
+- CLI 控制现有桌面实例；异常退出后由用户确认恢复运行项，不接管旧 PID。
+- 按项 UAC 助手、独立 LocalService 后台托管；无障碍名称、键盘编辑与中英文安装器。
+
+#### 修复与验证
+- 服务校验复用实际启动路径解析，支持工作目录和 PATH；CLI 身份查询及时释放句柄。
+- 非空发布目录拒绝复用，防止残留配置或日志进入安装包。
+- 主回归扩展至 104 组；更新中英文及紧凑视图截图、性能门禁和隔离安装数据保留验收。
+
+#### 限制
+- 未签名预发布，仅手动安装；可信更新和生产签名仍阻断。
+- 真实 UAC/SCM、LocalService 权限、读屏软件、Win10 实机及真实服务验收待完成。
 
 ### [0.7.1] - 2026-10-12
 

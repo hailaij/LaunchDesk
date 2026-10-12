@@ -33,5 +33,13 @@ internal static class Theme
             var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));
             brush.Freeze(); System.Windows.Application.Current.Resources[name] = brush;
         }
+        if (System.Windows.SystemParameters.HighContrast)
+        {
+            var resources = System.Windows.Application.Current.Resources;
+            foreach (var key in new[] { "Canvas", "Surface", "SurfaceHover", "Terminal" }) resources[key] = System.Windows.SystemColors.WindowBrush;
+            foreach (var key in new[] { "Text", "Muted", "Stroke", "TerminalText" }) resources[key] = System.Windows.SystemColors.WindowTextBrush;
+            resources["Accent"] = System.Windows.SystemColors.HighlightBrush;
+            resources["Selection"] = System.Windows.SystemColors.ControlBrush;
+        }
     }
 }

@@ -47,6 +47,26 @@ internal static class UiText
         Labels.Refresh();
     }
     private const string Catalog = """
+启动项|Launch items
+每次启动请求管理员授权|Request administrator consent on every launch
+Windows 服务管理|Windows service management
+后台托管|Background hosting
+安装服务|Install service
+替换服务配置|Replace service configuration
+启动服务|Start service
+停止服务|Stop service
+卸载服务|Uninstall service
+服务操作失败|Service operation failed
+服务状态：|Service status: \u0020
+此操作需要管理员授权。服务使用独立配置和 LocalService 账号；不会更改桌面配置。是否继续？|This operation requires administrator consent. The service uses independent configuration and the LocalService account; desktop configuration is unchanged. Continue?
+恢复上次运行项|Recover previous running items
+上次会话未正常退出。请选择要按当前配置重新启动的项目；依赖项也会启动。本次不会执行其他自启项。|The previous session did not exit normally. Select items to restart using the current configuration; dependencies will also start. Other auto-start items will not run this time.
+没有可恢复的启动项。|No launch items are available for recovery.
+{0} 个已删除或不匹配的项目不会恢复。|{0} deleted or unmatched items will not be recovered.
+不恢复|Skip recovery
+恢复所选|Restore selected
+外部命令执行中，请稍后重试。|An external command is running. Retry later.
+运行记录读取失败，原文件已保留。本次不会启动服务，请检查运行记录后重试。|The session journal could not be read and has been preserved. No services will start. Check the journal before retrying.
 语言|Language
 复制|Copy
 全选|Select all
@@ -247,7 +267,7 @@ Windows 启动项管理器|Windows launch item manager
 问题反馈|Report an issue
 源代码许可：MIT License|Source license: MIT License
 第三方组件|Third-party components
-使用 Microsoft .NET 10、WPF 与 WinForms。源代码没有第三方 NuGet PackageReference 依赖。自包含发行包的运行时许可和声明位于 runtime-notices 目录。|Built with Microsoft .NET 10, WPF and WinForms. No third-party NuGet PackageReference dependencies. Runtime licenses and notices are in runtime-notices in self-contained packages.
+使用 Microsoft .NET 10、WPF、WinForms 和 Microsoft ServiceController。自包含发行包的许可和声明位于 runtime-notices 目录。|Built with Microsoft .NET 10, WPF, WinForms and Microsoft ServiceController. Licenses and notices are in runtime-notices in self-contained packages.
 MIT 许可证|MIT license
 第三方声明|Third-party notices
 无法打开浏览器：|Cannot open browser:\u0020
@@ -328,6 +348,31 @@ SHA-256 校验失败，更新包已拒绝。|SHA-256 verification failed. The up
 发行者证书为空。|The publisher certificate is empty.
 发行者证书无效。|Invalid publisher certificate.
 安装包签名有效，但不属于受信任的 LaunchDesk 发行者。|The signature is valid but does not belong to the trusted LaunchDesk publisher.
+运行健康监控|Runtime health monitoring
+启用健康监控|Enable health monitoring
+健康监控|Health monitoring
+复用 TCP/HTTP 就绪地址|Reuse TCP/HTTP readiness endpoint
+检测地址|Probe endpoint
+检查间隔（秒）|Check interval (s)
+检查超时（秒）|Probe timeout (s)
+连续失败次数|Failure threshold
+连续恢复次数|Recovery threshold
+健康异常时自动重启|Restart when unhealthy
+异常处理|Failure action
+重启冷却（秒）|Restart cooldown (s)
+10 分钟重启上限|Restarts per 10 minutes
+健康|Healthy
+不健康|Unhealthy
+待检查|Awaiting checks
+最近检查|Last check
+健康检查超时|Health probe timed out
+健康重启冷却中|Health restart cooling down
+健康重启达到 10 分钟频率上限|Health restart rate limit reached
+健康异常重启|Restarting after health failure
+健康监控配置无效：|Invalid health configuration:\u0020
+健康监控需要 TCP 或 HTTP 地址，不能复用日志或关闭的就绪检测。|Health monitoring requires TCP or HTTP; disabled/log readiness cannot be reused.
+健康监控 TCP 主机或端口无效。|Invalid health TCP host or port.
+健康监控需要不含用户名密码的 HTTP/HTTPS 地址。|Health monitoring requires an HTTP/HTTPS URL without credentials.
 等待服务就绪|Waiting for readiness
 服务已就绪|Service ready
 程序正在退出。|The application is exiting.
@@ -341,5 +386,18 @@ Shell 脚本需要指定解释器路径。|Shell scripts require an interpreter 
 新文件夹|New folder
  副本| copy
 无法打开链接|Cannot open link
+聊天服务|Chat service
+Node 服务|Node service
+后台任务|Background task
+聊天工具|Chat tools
+服务已连接|Service connected
+启动完成|Startup complete
+测试警告|Test warning
+[12:00:01] 服务已连接\n[12:00:02] 启动完成，等待任务\n|[12:00:01] Service connected\n[12:00:02] Startup complete, waiting for tasks\n
+[12:00:03] 测试警告：连接重试\n|[12:00:03] Test warning: retrying connection\n
+暂停期间捕获\n|Captured while paused\n
+暂停期间捕获|Captured while paused
+[聊天服务]|[Chat service]
+[Node 服务]|[Node service]
 """;
 }

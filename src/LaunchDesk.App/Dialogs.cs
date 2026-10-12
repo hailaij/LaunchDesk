@@ -18,6 +18,12 @@ internal static class FormLayout
         var grid = new Grid { Margin = new Thickness(0, 0, 0, 10) };
         grid.ColumnDefinitions.Add(new() { Width = new GridLength(UiText.Language == "en-US" ? 140 : 112) }); grid.ColumnDefinitions.Add(new());
         grid.Children.Add(new TextBlock { Text = label, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 9, 10, 0) });
+        void Label(UIElement element)
+        {
+            if (element is Control) System.Windows.Automation.AutomationProperties.SetLabeledBy(element, (TextBlock)grid.Children[0]);
+            if (element is Panel children) foreach (UIElement child in children.Children) Label(child);
+        }
+        Label(control);
         Grid.SetColumn(control, 1); grid.Children.Add(control); panel.Children.Add(grid);
     }
     public static TextBox Text(string value, bool multiline = false) => new()
@@ -29,6 +35,7 @@ internal static class FormLayout
     {
         var panel = new DockPanel();
         var button = new Button { Content = "…", Width = 36, ToolTip = T("浏览"), Margin = new Thickness(8, 0, 0, 0) };
+        System.Windows.Automation.AutomationProperties.SetName(button, T("浏览"));
         button.Click += (_, _) => pick(); DockPanel.SetDock(button, Dock.Right); panel.Children.Add(button); panel.Children.Add(text); return panel;
     }
     public static void Finish(Window window, Panel form, Action save)
@@ -44,6 +51,7 @@ internal static class FormLayout
         Grid.SetRow(buttons, 1); grid.Children.Add(buttons);
         var surface = new Border { Padding = new Thickness(24), Child = grid };
         surface.SetResourceReference(Border.BackgroundProperty, "Canvas"); window.Content = surface;
+        window.Loaded += (_, _) => Accessibility.Apply(window);
     }
 }
 
@@ -109,7 +117,8 @@ public sealed class ItemDialog : Window
         var auto = new CheckBox { Content = T("随管理器启动"), IsChecked = item.AutoStart };
         var restart = new CheckBox { Content = T("退出后自动重启"), IsChecked = item.AutoRestart };
         var visible = new CheckBox { Content = T("显示目标窗口"), IsChecked = item.ShowWindow };
-        options.Children.Add(auto); options.Children.Add(restart); options.Children.Add(visible); FormLayout.Row(form, T("选项"), options);
+        var elevated = new CheckBox { Content = T("每次启动请求管理员授权"), IsChecked = item.RequireElevation };
+        options.Children.Add(auto); options.Children.Add(restart); options.Children.Add(visible); options.Children.Add(elevated); FormLayout.Row(form, T("选项"), options);
         FormLayout.Section(form, T("服务就绪检测"));
         var readinessKind = new ComboBox { ItemsSource = new[] { T("关闭检测"), T("TCP 端口"), T("HTTP 成功响应"), T("日志关键词") }, SelectedIndex = (int)item.Readiness.Kind };
         FormLayout.Row(form, T("检测方式"), readinessKind);
@@ -128,6 +137,42 @@ public sealed class ItemDialog : Window
             timeoutFields.Visibility = readinessKind.SelectedIndex != 0 ? Visibility.Visible : Visibility.Collapsed;
         }
         readinessKind.SelectionChanged += (_, _) => UpdateReadinessFields(); UpdateReadinessFields();
+        FormLayout.Section(form, T("运行健康监控"));
+        var healthEnabled = new CheckBox { Name = "HealthEnabled", Content = T("启用健康监控"), IsChecked = item.Health.Enabled };
+        FormLayout.Row(form, T("健康监控"), healthEnabled);
+        var healthFields = new StackPanel(); form.Children.Add(healthFields);
+        var healthReuse = new CheckBox { Content = T("复用 TCP/HTTP 就绪地址"), IsChecked = item.Health.ReuseReadiness };
+        FormLayout.Row(healthFields, T("检测地址"), healthReuse);
+        var healthKind = new ComboBox { ItemsSource = new[] { T("TCP 端口"), T("HTTP 成功响应") }, SelectedIndex = item.Health.Kind == ReadinessKind.Tcp ? 0 : 1 };
+        var healthEndpointFields = new StackPanel(); healthFields.Children.Add(healthEndpointFields);
+        FormLayout.Row(healthEndpointFields, T("检测方式"), healthKind);
+        var healthHost = FormLayout.Text(item.Health.Host); var healthPort = FormLayout.Text(item.Health.Port.ToString());
+        var healthUrl = FormLayout.Text(item.Health.Url);
+        var healthTcp = new StackPanel(); FormLayout.Row(healthTcp, T("主机"), healthHost); FormLayout.Row(healthTcp, T("端口"), healthPort); healthEndpointFields.Children.Add(healthTcp);
+        var healthHttp = new StackPanel(); FormLayout.Row(healthHttp, T("HTTP 地址"), healthUrl); healthEndpointFields.Children.Add(healthHttp);
+        var interval = FormLayout.Text(item.Health.IntervalSeconds.ToString()); FormLayout.Row(healthFields, T("检查间隔（秒）"), interval);
+        var healthTimeout = FormLayout.Text(item.Health.TimeoutSeconds.ToString()); FormLayout.Row(healthFields, T("检查超时（秒）"), healthTimeout);
+        var failures = FormLayout.Text(item.Health.FailureThreshold.ToString()); FormLayout.Row(healthFields, T("连续失败次数"), failures);
+        var recovery = FormLayout.Text(item.Health.RecoveryThreshold.ToString()); FormLayout.Row(healthFields, T("连续恢复次数"), recovery);
+        var healthRestart = new CheckBox { Content = T("健康异常时自动重启"), IsChecked = item.Health.AutoRestart };
+        FormLayout.Row(healthFields, T("异常处理"), healthRestart);
+        var restartFields = new StackPanel(); healthFields.Children.Add(restartFields);
+        var cooldown = FormLayout.Text(item.Health.RestartCooldownSeconds.ToString()); FormLayout.Row(restartFields, T("重启冷却（秒）"), cooldown);
+        var restartLimit = FormLayout.Text(item.Health.MaxRestartsPerTenMinutes.ToString()); FormLayout.Row(restartFields, T("10 分钟重启上限"), restartLimit);
+        void UpdateHealthFields()
+        {
+            healthFields.Visibility = healthEnabled.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+            healthReuse.IsEnabled = readinessKind.SelectedIndex is 1 or 2;
+            if (!healthReuse.IsEnabled) healthReuse.IsChecked = false;
+            healthEndpointFields.Visibility = healthReuse.IsChecked == true ? Visibility.Collapsed : Visibility.Visible;
+            healthTcp.Visibility = healthKind.SelectedIndex == 0 ? Visibility.Visible : Visibility.Collapsed;
+            healthHttp.Visibility = healthKind.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
+            restartFields.Visibility = healthRestart.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        }
+        healthEnabled.Checked += (_, _) => UpdateHealthFields(); healthEnabled.Unchecked += (_, _) => UpdateHealthFields();
+        healthReuse.Checked += (_, _) => UpdateHealthFields(); healthReuse.Unchecked += (_, _) => UpdateHealthFields();
+        healthRestart.Checked += (_, _) => UpdateHealthFields(); healthRestart.Unchecked += (_, _) => UpdateHealthFields();
+        healthKind.SelectionChanged += (_, _) => UpdateHealthFields(); readinessKind.SelectionChanged += (_, _) => UpdateHealthFields(); UpdateHealthFields();
         void ApplyFields()
         {
             item.Name = name.Text.Trim(); item.Kind = (LaunchKind)kind.SelectedIndex; item.Target = target.Text.Trim();
@@ -138,10 +183,21 @@ public sealed class ItemDialog : Window
             item.StopInputDelaySeconds = int.Parse(stopDelay.Text); item.SendStopSignalBeforeInput = signalFirst.IsChecked == true;
             item.StartupOrder = int.Parse(startupOrder.Text);
             item.AutoStart = auto.IsChecked == true; item.AutoRestart = restart.IsChecked == true; item.ShowWindow = visible.IsChecked == true;
+            item.RequireElevation = elevated.IsChecked == true;
             item.Dependencies = dependencies.SelectedItems.Cast<LaunchItem>().Select(x => x.Id).ToList();
             item.Readiness = new() { Kind = (ReadinessKind)readinessKind.SelectedIndex, Host = host.Text.Trim(),
                 Port = readinessKind.SelectedIndex == 1 ? int.Parse(port.Text) : item.Readiness.Port, Url = url.Text.Trim(), Keyword = keyword.Text,
                 TimeoutSeconds = readinessKind.SelectedIndex == 0 ? item.Readiness.TimeoutSeconds : int.Parse(readyTimeout.Text) };
+            item.Health = new()
+            {
+                Enabled = healthEnabled.IsChecked == true, ReuseReadiness = healthReuse.IsChecked == true,
+                Kind = healthKind.SelectedIndex == 0 ? ReadinessKind.Tcp : ReadinessKind.Http,
+                Host = healthHost.Text.Trim(), Port = int.Parse(healthPort.Text), Url = healthUrl.Text.Trim(),
+                IntervalSeconds = int.Parse(interval.Text), TimeoutSeconds = int.Parse(healthTimeout.Text),
+                FailureThreshold = int.Parse(failures.Text), RecoveryThreshold = int.Parse(recovery.Text),
+                AutoRestart = healthEnabled.IsChecked == true && healthRestart.IsChecked == true,
+                RestartCooldownSeconds = int.Parse(cooldown.Text), MaxRestartsPerTenMinutes = int.Parse(restartLimit.Text)
+            };
             item.Environment = new(StringComparer.OrdinalIgnoreCase);
             foreach (var line in env.Text.Split('\n').Select(x => x.TrimEnd('\r')).Where(x => !string.IsNullOrWhiteSpace(x)))
             {
@@ -245,6 +301,9 @@ public sealed class SettingsDialog : Window
         var days = FormLayout.Text(preferences.LogDays.ToString()); FormLayout.Row(form, T("日志保留（天）"), days);
         var size = FormLayout.Text(preferences.LogLimitMiB.ToString()); FormLayout.Row(form, T("每项上限（MiB）"), size);
         FormLayout.Section(form, T("关于与开源"));
+        var services = new Button { Content = T("Windows 服务管理"), HorizontalAlignment = HorizontalAlignment.Left };
+        services.Click += (_, _) => new ServiceDialog { Owner = this }.ShowDialog();
+        FormLayout.Row(form, T("后台托管"), services);
         var automaticUpdates = new CheckBox { Content = T("启动时检查更新"), IsChecked = preferences.CheckUpdatesOnStartup };
         FormLayout.Row(form, T("更新"), automaticUpdates);
         var about = new Button { Content = T("关于 LaunchDesk"), HorizontalAlignment = HorizontalAlignment.Left };
@@ -300,7 +359,7 @@ public sealed class AboutDialog : Window
         AddLink(form, T("问题反馈"), "https://github.com/hailaij/LaunchDesk/issues");
         AddLink(form, T("版本发布"), "https://github.com/hailaij/LaunchDesk/releases");
         FormLayout.Section(form, T("第三方组件"));
-        AddText(form, T("使用 Microsoft .NET 10、WPF 与 WinForms。源代码没有第三方 NuGet PackageReference 依赖。自包含发行包的运行时许可和声明位于 runtime-notices 目录。"));
+        AddText(form, T("使用 Microsoft .NET 10、WPF、WinForms 和 Microsoft ServiceController。自包含发行包的许可和声明位于 runtime-notices 目录。"));
         var licenses = new StackPanel { Orientation = Orientation.Horizontal };
         foreach (var entry in new[] { (T("MIT 许可证"), "LICENSE"), (T("第三方声明"), "THIRD-PARTY-NOTICES.md") })
         {

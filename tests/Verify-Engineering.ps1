@@ -16,6 +16,33 @@ function Reject([scriptblock]$Action) {
     if (-not $rejected) { throw 'Expected rejection did not happen' }
 }
 try {
+    Check 'Packaging refuses stale payload without modifying it' {
+        $directory = Join-Path $output ('stale-package-' + [guid]::NewGuid().ToString('N'))
+        $payload = Join-Path $directory 'LaunchDesk-win-x64'
+        New-Item -ItemType Directory -Path $payload -Force | Out-Null
+        $sentinel = Join-Path $payload 'config.json'
+        [IO.File]::WriteAllText($sentinel, 'private sentinel: must never be packaged')
+        $hash = (Get-FileHash -LiteralPath $sentinel).Hash
+        $reason = ''
+        try { & (Join-Path $project 'scripts/package.ps1') -OutputDirectory $directory } catch { $reason = $_.Exception.Message }
+        if (-not $reason.Contains('Publish directory is not empty')) { throw 'Stale payload was not rejected at preflight' }
+        if ((Get-FileHash -LiteralPath $sentinel).Hash -ne $hash -or @(Get-ChildItem -LiteralPath $directory -Filter '*.zip').Count) { throw 'Stale payload changed or packaged' }
+    }
+    Check 'Bilingual installer translation is pinned and service host is included in signing' {
+        $translation = Join-Path $project 'installer/Languages/ChineseSimplified.isl'
+        if ((Get-FileHash -LiteralPath $translation).Hash -ne 'E0B0B350E2245F3C5E65586DFE43D574F6E7F06F2261149ABA284954B3FC9A8D') { throw 'Unreviewed installer translation' }
+        $installer = Get-Content -LiteralPath (Join-Path $project 'installer/LaunchDesk.iss') -Raw
+        foreach ($name in 'english','chinesesimplified') {
+            if (-not $installer.Contains('Name: "' + $name + '"; MessagesFile:')) { throw 'Installer language missing' }
+            foreach ($message in 'DesktopIcon','Shortcuts','LaunchApp','ExitBeforeUninstall') {
+                if (-not $installer.Contains($name + '.' + $message + '=')) { throw 'Localized installer message missing' }
+            }
+        }
+        foreach ($script in 'scripts/Import-SignedFiles.ps1','scripts/Verify-ReleaseFiles.ps1','.github/workflows/release.yml') {
+            $text = Get-Content -LiteralPath (Join-Path $project $script) -Raw
+            if (-not $text.Contains('LaunchDesk.Host.exe') -or -not $text.Contains('LaunchDesk.Host.dll')) { throw 'Service/elevation host missing from signing inventory' }
+        }
+    }
     Check 'Missing production publisher blocks release before building' {
         $config = Join-Path $output 'empty-signing.json'
         @{certificateSha256='';certificatePath=''} | ConvertTo-Json | Set-Content -LiteralPath $config -Encoding utf8

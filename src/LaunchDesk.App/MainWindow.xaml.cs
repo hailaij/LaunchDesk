@@ -19,6 +19,7 @@ namespace LaunchDesk;
 public sealed class ItemRow(LaunchItem item, bool isFolder = false, bool collapsed = false) : INotifyPropertyChanged
 {
     public string CollapseGlyph => collapsed ? "\uE76C" : "\uE70D";
+    public bool IsCollapsed => collapsed;
     public bool IsFolder { get; } = isFolder;
     public string Glyph => IsFolder ? "\uE8B7" : "\uE756";
     public Thickness NameIndent => new(!IsFolder && Item.FolderId.HasValue ? 16 : 0, 0, 0, 0);
@@ -52,6 +53,9 @@ public sealed class ItemRow(LaunchItem item, bool isFolder = false, bool collaps
     public string AutoStart => Item.AutoStart ? T("是") : "";
     public string Status { get; private set; } = T("未启动");
     public string Detail { get; private set; } = "";
+    public string HealthText { get; private set; } = "";
+    public string HealthDetail { get; private set; } = "";
+    public Brush HealthBrush { get; private set; } = Brushes.Gray;
     public string Pid { get; private set; } = "";
     public string ExitCode { get; private set; } = "";
     public string Duration { get; private set; } = "";
@@ -60,6 +64,12 @@ public sealed class ItemRow(LaunchItem item, bool isFolder = false, bool collaps
     public void Refresh(RuntimeSnapshot state, bool folderStarting = false)
     {
         Detail = ErrorText(state.Detail);
+        HealthText = state.Health.Status switch { HealthStatus.Healthy => T("健康"), HealthStatus.Unhealthy => T("不健康"),
+            HealthStatus.Waiting => T("待检查"), _ => "" };
+        HealthDetail = T("最近检查") + ": " + (state.Health.CheckedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "—")
+            + "\n" + ErrorText(state.Health.Detail);
+        HealthBrush = state.Health.Status == HealthStatus.Unhealthy ? new SolidColorBrush((Color)ColorConverter.ConvertFromString(Theme.IsDark ? "#FF9292" : "#BD3434"))
+            : (Brush)System.Windows.Application.Current.FindResource("Muted");
         CanRun = !state.Active && !folderStarting; CanStop = state.Active; CanModify = !state.Active && !folderStarting;
         Status = state.Status switch { RunStatus.Starting => state.Detail == "等待服务就绪" ? T("等待就绪") : T("启动中"), RunStatus.Running => T("运行中"), RunStatus.Stopping => T("停止中"), RunStatus.Exited => T("正常退出"), RunStatus.Failed => state.Detail.StartsWith("启动前检查") ? T("检查失败") : T("异常退出"), RunStatus.Restarting => T("等待重启"), _ => T("未启动") };
         StatusBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(state.Status switch
@@ -85,6 +95,10 @@ public partial class MainWindow : Window
     private ConfigurationStore store;
     private Configuration config;
     private ProcessManager manager;
+    private SessionJournal? session;
+    private LocalControl.Server? controlServer;
+    private int controlOperations;
+    private bool configurationChanging;
     private readonly ObservableCollection<ItemRow> rows = [];
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private Forms.NotifyIcon? tray;
@@ -92,6 +106,7 @@ public partial class MainWindow : Window
     private bool portable;
     private readonly string? smokePath;
     private readonly bool autostart;
+    private readonly string? controlPipeName;
     private bool exiting;
     private ErrorDiagnostics diagnostics;
     internal ErrorDiagnostics Diagnostics => diagnostics;
@@ -109,11 +124,12 @@ public partial class MainWindow : Window
     private ItemRow? dragRow;
     private const string RowDragFormat = "LaunchDesk.InternalRow";
     private ItemRow? Selected => ItemsGrid.SelectedItem as ItemRow;
-    public MainWindow(ConfigurationStore store, Configuration config, bool portable, string? smokePath, bool autostart)
+    public MainWindow(ConfigurationStore store, Configuration config, bool portable, string? smokePath, bool autostart, string? controlPipeName = null)
     {
         this.store = store; this.config = config; this.portable = portable; this.smokePath = smokePath; this.autostart = autostart;
+        this.controlPipeName = controlPipeName;
         diagnostics = new(store.Root);
-        manager = new(config, store.Root, Program.SignalAsync);
+        manager = new(config, store.Root, Program.SignalAsync, Program.LaunchAsync);
         UiText.Apply(config.Preferences.Language);
         InitializeComponent();
         var headers = new[] { "名称", "类型", "状态", "PID", "运行时长", "顺序", "退出码", "资源 / 命令", "自启", "备注", "操作" };
@@ -122,6 +138,22 @@ public partial class MainWindow : Window
         Theme.Apply(config.Preferences.Theme);
         SystemEvents.UserPreferenceChanged += SystemThemeChanged;
         ItemsGrid.ItemsSource = rows; ChannelFilter.SelectedIndex = 0;
+        Loaded += (_, _) => Accessibility.Apply(this);
+        ItemsGrid.SetResourceReference(System.Windows.Automation.AutomationProperties.NameProperty, "启动项");
+        LogBox.SetResourceReference(System.Windows.Automation.AutomationProperties.NameProperty, "日志");
+        ChannelFilter.SetResourceReference(System.Windows.Automation.AutomationProperties.NameProperty, "全部通道");
+        ItemsGrid.PreviewKeyDown += (_, e) =>
+        {
+            if (e.OriginalSource is TextBox || Selected is not { } row) return;
+            if (e.Key == Key.F2)
+            {
+                if (Equals(ItemsGrid.CurrentColumn?.Header, T("备注")) && !row.IsFolder) row.SetEditingNote(true);
+                else row.SetRenaming(true);
+                e.Handled = true;
+            }
+            else if (row.IsFolder && e.Key is Key.Left or Key.Right)
+            { if (row.IsCollapsed == (e.Key == Key.Right)) ToggleFolderClick(new Button { DataContext = row }, new RoutedEventArgs(Button.ClickEvent)); e.Handled = true; }
+        };
         var version = typeof(App).Assembly.GetName().Version!.ToString(3);
         Title = "LaunchDesk v" + version;
         SetResourceReference(IconProperty, "AppIcon");
@@ -241,6 +273,23 @@ public partial class MainWindow : Window
             PauseLog.IsChecked = false;
             if (!LogBox.Text.Contains(T("暂停期间捕获"))) throw new InvalidOperationException(T("恢复显示测试失败。"));
             Capture(this, smokePath);
+            var healthRow = rows.First(x => !x.IsFolder);
+            healthRow.Refresh(new(RunStatus.Running, 1234, null, DateTimeOffset.Now, "", true)
+                { Health = new(HealthStatus.Unhealthy, DateTimeOffset.Now, "HTTP 503") });
+            if (healthRow.HealthText != T("不健康") || !healthRow.HealthDetail.Contains("HTTP 503"))
+                throw new InvalidOperationException("Health row binding failed");
+            Capture(this, Path.ChangeExtension(smokePath, null) + "-health.png"); Refresh();
+            var healthPreview = ConfigurationStore.Clone(config.Items[0]);
+            healthPreview.Health = new() { Enabled = true, ReuseReadiness = false, Kind = ReadinessKind.Http, AutoRestart = true };
+            var healthEditor = new ItemDialog(healthPreview, config.Items, config.Folders) { Owner = this };
+            healthEditor.Show();
+            if (healthEditor.Content is Border { Child: Grid healthGrid } && healthGrid.Children[0] is ScrollViewer { Content: StackPanel healthForm } healthScroll)
+            {
+                var healthSection = healthForm.Children.OfType<Grid>().Single(x => x.Children[0] is TextBlock label && label.Text == T("健康监控"));
+                healthEditor.UpdateLayout(); healthScroll.ScrollToVerticalOffset(healthSection.TranslatePoint(new Point(0, 0), healthForm).Y - 30);
+                await Task.Delay(250); Capture(healthEditor, Path.ChangeExtension(smokePath, null) + "-health-settings.png");
+            }
+            healthEditor.Close();
             var editor = new ItemDialog(ConfigurationStore.Clone(config.Items[0]), config.Items, config.Folders) { Owner = this };
             editor.Show(); await Task.Delay(250); Capture(editor, Path.ChangeExtension(smokePath, null) + "-editor.png");
             if (editor.Content is Border { Child: Grid editorGrid } && editorGrid.Children[0] is ScrollViewer { Content: StackPanel editorForm })
@@ -349,10 +398,56 @@ public partial class MainWindow : Window
             await ExitAsync(); return;
         }
         Populate(); CreateTray();
+        session = new(store.Root);
+        SessionState? previous;
+        try { previous = session.ReadPrevious(); }
+        catch (Exception error)
+        {
+            session = null;
+            throw new IOException(T("运行记录读取失败，原文件已保留。本次不会启动服务，请检查运行记录后重试。") + "\n" + error.Message, error);
+        }
+        var recovery = Array.Empty<LaunchItem>();
+        if (previous is { Dirty: true })
+        {
+            var candidates = SessionJournal.RecoveryItems(previous, config);
+            if (store.RecoveredFrom is null)
+            {
+                var dialog = new RecoveryDialog(candidates, previous.ActiveItems.Length - candidates.Length) { Owner = this };
+                if (dialog.ShowDialog() == true) recovery = candidates.Where(x => dialog.SelectedIds.Contains(x.Id)).ToArray();
+            }
+        }
+        session.Begin(); manager.Session = session;
+        controlServer = new((request, token) => Dispatcher.InvokeAsync(() => HandleControlAsync(request, token)).Task.Unwrap(), controlPipeName);
         if (config.Preferences.StartMinimized || autostart) Hide();
         if (config.Preferences.CheckUpdatesOnStartup) _ = CheckAtStartupAsync();
-        if (store.RecoveredFrom is null) await Execute(() => manager.StartAllAsync(true));
+        if (previous is { Dirty: true })
+            await Execute(async () =>
+            {
+                var errors = new List<Exception>();
+                foreach (var item in recovery)
+                    try { await manager.StartAsync(item.Id); } catch (Exception error) { errors.Add(new Exception(item.Name + ": " + error.Message, error)); }
+                if (errors.Count > 0) throw new AggregateException(errors);
+            });
+        else if (store.RecoveredFrom is null) await Execute(() => manager.StartAllAsync(true));
     }
+    private async Task<ControlResponse> HandleControlAsync(ControlRequest request, CancellationToken token)
+    {
+        if (exiting || configurationChanging || !IsEnabled) return new(false, "Desktop application is busy or closing. Retry later.", []);
+        controlOperations++;
+        try
+        {
+            if (request.All && request.Command is "stop" or "restart")
+            {
+                await StopEverything();
+                if (request.Command == "stop") request = new("status");
+                else request = new("start", All: true);
+            }
+            var response = await ControlCommands.ExecuteAsync(request, manager, token);
+            Refresh(); return response;
+        }
+        finally { controlOperations--; }
+    }
+    private ProcessManager CreateManager() => new(config, store.Root, Program.SignalAsync, Program.LaunchAsync) { Session = session };
     private async Task CheckAtStartupAsync()
     {
         try
@@ -528,6 +623,8 @@ public partial class MainWindow : Window
             var state = states[selected.Item.Id];
             StartButton.IsEnabled = !state.Active; StopButton.IsEnabled = state.Active; RestartButton.IsEnabled = true;
             if (state.Detail.Length > 0) StatusText.Text = selected.Name + ": " + ErrorText(state.Detail);
+            if (state.Active && state.Health.Status != HealthStatus.Disabled)
+                StatusText.Text = selected.Name + ": " + selected.HealthText + " · " + selected.HealthDetail.Replace("\n", " · ");
         }
         if (lastSelected != selected.Item.Id)
         {
@@ -615,7 +712,10 @@ public partial class MainWindow : Window
     private void NameEditorVisible(object sender, DependencyPropertyChangedEventArgs e)
     {
         if (sender is TextBox editor && editor.IsVisible)
+        {
+            System.Windows.Automation.AutomationProperties.SetName(editor, editor.DataContext is ItemRow { IsEditingNote: true } ? T("备注") : T("名称"));
             Dispatcher.BeginInvoke(() => { if (editor.IsVisible) { editor.Focus(); editor.SelectAll(); } });
+        }
     }
     private void CommitName(ItemRow row)
     {
@@ -862,12 +962,16 @@ public partial class MainWindow : Window
     }
     private async Task Import(string path)
     {
+        if (controlOperations > 0 || configurationChanging) throw new InvalidOperationException(T("外部命令执行中，请稍后重试。"));
         if (folderStarts.Count > 0 || config.Items.Any(x => manager.Snapshot(x.Id).Active)) throw new InvalidOperationException(T("导入前请停止全部启动项。"));
         var imported = ConfigurationStore.Read(path);
         if (MessageBox.Show(this, F("替换当前配置为 {0} 个启动项？原配置将自动备份。导入项不会立即启动。", imported.Items.Count), T("导入配置"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         // Login startup is a local preference, not an imported configuration's side effect.
         imported.Preferences.StartAtLogin = config.Preferences.StartAtLogin;
-        store.Save(imported); await manager.DisposeAsync(); config = imported; manager = new(config, store.Root, Program.SignalAsync); Theme.Apply(config.Preferences.Theme);
+        configurationChanging = true;
+        try { store.Save(imported); await manager.DisposeAsync(); config = imported; manager = CreateManager(); }
+        finally { configurationChanging = false; }
+        Theme.Apply(config.Preferences.Theme);
         UiText.Apply(config.Preferences.Language); Populate(); CreateTray(); lastRevision = -1;
         ModeText.Text = (portable ? T("便携模式") : T("用户模式")) + " · v" + typeof(App).Assembly.GetName().Version!.ToString(3);
     }
@@ -898,6 +1002,7 @@ public partial class MainWindow : Window
             var changingRoot = !Path.TrimEndingDirectorySeparator(destinationRoot).Equals(Path.TrimEndingDirectorySeparator(store.Root), StringComparison.OrdinalIgnoreCase);
             if (changingRoot && (folderStarts.Count > 0 || config.Items.Any(x => manager.Snapshot(x.Id).Active)))
                 throw new InvalidOperationException(T("更改数据目录前请停止全部启动项。"));
+            if (changingRoot && controlOperations > 0) throw new InvalidOperationException(T("外部命令执行中，请稍后重试。"));
             if (changingRoot && MessageBox.Show(this, T("将配置、日志与备份复制到新目录，并立即切换。原目录保留，不覆盖目标已有数据。继续？"), T("切换数据目录"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
             var p = config.Preferences;
             p.Language = dialog.Preferences.Language;
@@ -911,13 +1016,13 @@ public partial class MainWindow : Window
                 var targetStore = store;
                 if (changingRoot)
                 {
-                    IsEnabled = false;
+                    IsEnabled = false; configurationChanging = true;
                     try
                     {
                         await manager.DisposeAsync();
                         targetStore = await Task.Run(() => DataLocation.CopyTo(store, config, destinationRoot));
                     }
-                    catch { manager = new(config, store.Root, Program.SignalAsync); throw; }
+                    catch { manager = CreateManager(); throw; }
                     finally { IsEnabled = true; }
                 }
                 try
@@ -930,9 +1035,15 @@ public partial class MainWindow : Window
                         else if (File.Exists(flag)) File.Delete(flag);
                     }
                 }
-                catch { if (changingRoot) manager = new(config, store.Root, Program.SignalAsync); throw; }
+                catch { if (changingRoot) manager = CreateManager(); throw; }
                 store = targetStore; portable = dialog.Portable; diagnostics = new(store.Root);
-                if (changingRoot) manager = new(config, store.Root, Program.SignalAsync);
+                if (changingRoot)
+                {
+                    var oldSession = session;
+                    session = new(store.Root);
+                    manager = CreateManager();
+                    session.Begin(); oldSession?.MarkClean();
+                }
             }
             catch { config.Preferences.Language = previous.Language; config.Preferences.Theme = previous.Theme; config.Preferences.StartAtLogin = previous.StartAtLogin; config.Preferences.StartMinimized = previous.StartMinimized;
                 config.Preferences.MinimizeToTray = previous.MinimizeToTray; config.Preferences.LogDays = previous.LogDays; config.Preferences.LogLimitMiB = previous.LogLimitMiB;
@@ -954,6 +1065,7 @@ public partial class MainWindow : Window
             Theme.Apply(config.Preferences.Theme); Refresh();
         }
         catch (Exception error) { ShowError(error); }
+        finally { configurationChanging = false; }
     }
     private void WindowClosing(object? s, CancelEventArgs e) { if (!exiting) { e.Cancel = true; Hide(); } }
     private void SystemThemeChanged(object sender, UserPreferenceChangedEventArgs e)
@@ -969,8 +1081,15 @@ public partial class MainWindow : Window
     private async Task ExitAsync(int exitCode = 0, Exception? fatalError = null)
     {
         if (exiting) return; exiting = true; startupUpdateCancellation.Cancel(); SystemEvents.UserPreferenceChanged -= SystemThemeChanged; timer.Stop(); IsEnabled = false; StatusText.Text = T("正在停止进程并保存日志…");
+        controlServer?.Stop();
+        if (fatalError is not null || exitCode != 0) session?.Freeze();
         foreach (var pending in folderStarts.Values.ToArray()) pending.Cancel();
-        try { await manager.DisposeAsync(); }
+        try
+        {
+            await manager.DisposeAsync();
+            if (controlServer is not null) await controlServer.DisposeAsync();
+            if (exitCode == 0 && fatalError is null) session?.MarkClean();
+        }
         catch (Exception error) { diagnostics.Write("Exit cleanup", error); if (smokePath is null) MessageBox.Show(this, ErrorText(error.Message), T("退出清理失败"), MessageBoxButton.OK, MessageBoxImage.Error); exitCode = 1; }
         finally
         {

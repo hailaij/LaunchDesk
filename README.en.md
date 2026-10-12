@@ -2,13 +2,24 @@
 
 [Simplified Chinese](README.md) | [English](README.en.md)
 
-A Windows desktop manager for scripts, commands and applications, with real-time logs. Current version: **v0.7.1** (unsigned prerelease, early development).
+A Windows desktop manager for scripts, commands and applications, with real-time logs. Current version: **v0.8.0** (unsigned prerelease, early development).
 
 **Release status:** This is an unsigned prerelease for manual download and installation only. Missing production signing configuration still blocks the trusted update pipeline. Test certificates never enter production trust. See [Trust and engineering verification](docs/trust-and-engineering.md).
 
-![LaunchDesk](docs/images/main.png)
+![LaunchDesk](docs/images/main-en.png)
+
+[Current screenshots](docs/screenshots.md) (v0.8.0; isolated fixture data, not first-install configuration).
 
 ## Features
+
+### New and Fixed in v0.8.0
+
+- Health monitoring, CLI and crash recovery; per-item UAC and separate LocalService hosting.
+- Accessible names/labels, keyboard focus, F2 inline editing and folder arrow keys; bilingual installer.
+- Separate service/desktop data; desktop upgrades do not silently replace service runtime.
+  Real UAC/SCM, screen reader and physical Win10 acceptance remain pending.
+  See [service/accessibility details](docs/service-accessibility-installer.md).
+- Fixed service path validation, local identity handle disposal and stale packaging isolation; see [release review](docs/release-v0.8.0.md).
 
 ### Fixed in v0.7.1
 
@@ -71,7 +82,7 @@ A Windows desktop manager for scripts, commands and applications, with real-time
 
 Windows 10/11 x64. Self-contained packages include the .NET runtime. Keep the entire extracted directory and launch `LaunchDesk.exe`.
 
-Manually download `LaunchDesk-v0.7.1-win-x64-setup.exe` or the portable `LaunchDesk-v0.7.1-win-x64.zip` from [Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.7.1). SHA-256 sidecar files are provided. This unsigned prerelease requires manual installation and is not a trusted in-app update. Hashes do not replace publisher signatures.
+Manually download `LaunchDesk-v0.8.0-win-x64-setup.exe` or the portable `LaunchDesk-v0.8.0-win-x64.zip` from [Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.8.0). SHA-256 sidecar files are provided. This unsigned prerelease requires manual installation and is not a trusted in-app update. Hashes do not replace publisher signatures.
 
 First launch is empty. No local services are preconfigured or executed. Closing the window hides it to the tray. Use **Exit** in the tray menu to stop all managed processes and drain logs before upgrading. Single-instance activation may restore an already running older copy; window titles show the actual assembly version, and cross-version/path launches show a warning.
 
@@ -89,7 +100,7 @@ Theme changes take effect after saving Settings. Existing configurations remain 
 | PowerShell | PowerShell script | `C:\Scripts\worker.ps1` | As needed | `C:\Scripts` |
 | Git Bash | Shell script | `C:\Scripts\worker.sh` | As needed | `C:\Scripts` |
 
-BAT defaults to its own directory when no working directory is supplied. Commands use cmd syntax. Shell requires a directly executable interpreter such as Git's `bin\bash.exe`, not the WSL launcher. Environment variables use one `NAME=VALUE` per line. UTF-8 is the default; GBK is available for legacy programs. Encoding applies to displayed output and stdin, not retained raw bytes.
+BAT defaults to its own directory when no working directory is supplied. Commands use cmd syntax. Shell requires a directly executable interpreter such as Git's `bin\bash.exe`, not the WSL launcher. Environment variables use one `NAME=VALUE` per line. New items default to automatic decoding: UTF-8 first, then system ANSI on invalid bytes. GBK is available for legacy programs. Existing settings are unchanged. Automatic mode uses UTF-8 stdin; explicit encodings apply to displayed output and stdin, not retained raw bytes.
 
 Folders are application groups, not disk directories. Folder start also starts explicit dependencies, possibly outside the folder; folder stop affects its own members only. Deleting a folder dissolves it without deleting items, running processes, logs or scripts. Stop an item before editing its execution settings or deleting it.
 
@@ -121,11 +132,11 @@ Readiness defaults to off for compatibility. Timeouts range from 1 to 300 second
 
 Dragging running items is disabled. Drop on a folder to join it, before an item to reorder and adopt its group, or in empty list space to ungroup. Folders can reorder but cannot nest. Complex cmd expressions remain cmd's responsibility; preflight success does not guarantee application success.
 
-No per-item elevation, WSL/Docker lifecycle management, Windows service hosting or remote administration. Externally hosted services and existing GUI single-instance processes may be outside the Job. Only actual stdout/stderr writes can be captured; file-only logs, unflushed buffers, power loss and storage failure cannot be guaranteed lossless.
+Per-item elevation requests UAC on every launch, without storing credentials. Independent LocalService hosting supports background scripts/console programs only. WSL/Docker lifecycle management and remote administration are not supported. Externally hosted services and existing GUI single-instance processes may be outside the Job. Only actual stdout/stderr writes can be captured; file-only logs, unflushed buffers, power loss and storage failure cannot be guaranteed lossless.
 
 ## Build and Verify
 
-Requires Windows x64, **.NET SDK 10.0.401** and [Inno Setup 6](https://jrsoftware.org/isdl.php) for installers. No third-party NuGet PackageReference dependencies; self-contained runtime packs restore from official NuGet.
+Requires Windows x64, **.NET SDK 10.0.401** and [Inno Setup 6](https://jrsoftware.org/isdl.php) for installers. Host uses Microsoft's locked `System.ServiceProcess.ServiceController` 10.0.0 and EventLog dependency; self-contained runtime packs restore from official NuGet.
 
 ```powershell
 dotnet restore LaunchDesk.slnx --locked-mode
@@ -135,13 +146,13 @@ dotnet run --project tests/LaunchDesk.Tests -c Release -- --report artifacts/tes
 ./scripts/build-installer.ps1 -CompilerPath 'D:\tool\Inno Setup 6\ISCC.exe'
 ```
 
-Installer output: `artifacts/installers/LaunchDesk-v0.7.1-win-x64-setup.exe` plus SHA-256. Installs for the current user to `%LOCALAPPDATA%\Programs\LaunchDesk`, with optional shortcuts and no default application launch. Exit the tray instance before upgrade/uninstall. User data is retained. This version tests fresh install, upgrade preservation and uninstall using the same script and release payload with an isolated installation identity; it does not upgrade the active production installation. Physical Windows 10 and real-service acceptance remain deferred. Installers are unsigned and English; the app supports Chinese/English.
+Installer output: `artifacts/installers/LaunchDesk-v0.8.0-win-x64-setup.exe` plus SHA-256. Installs for the current user to `%LOCALAPPDATA%\Programs\LaunchDesk`, with optional shortcuts and no default application launch. Exit the tray instance before upgrade/uninstall. User data is retained. This version tests fresh install, upgrade preservation and uninstall using the same script and release payload with an isolated installation identity; it does not upgrade the active production installation. Physical Windows 10 and real-service acceptance remain deferred. Installers are unsigned and bilingual (Simplified Chinese/English). Desktop uninstall retains separate service registration, runtime and data; uninstall the service explicitly first.
 
 See [Project structure](docs/project-structure.md). Generated files belong under `artifacts/`.
 
 Tests use isolated directories and disposable processes. They cover output flooding, UTF-8 chunking, GBK, trailing partial lines, raw bytes, BAT paths/pause, npm, stdin, environment, dependencies, lifecycle races, restart limits, log failures and process-tree cleanup. Three real services remain untested at the user's request.
 
-The development test inventory has 81 groups. Without a signing fixture, three groups are explicitly skipped; strict CI rejects skips. Historical reports: [Test evidence](docs/test-summary.md). Developers can run `./tests/Verify-Ui.ps1` and `./tests/Verify-Engineering.ps1`. Temporary self-signed trust roots are allowed only on disposable GitHub-hosted runners, never developer workstations. The v0.7.1 Release verification section records its commit, CI and binary acceptance.
+The core test inventory has 104 groups. Without a signing fixture, three groups are explicitly skipped; strict CI rejects skips. Historical reports: [Test evidence](docs/test-summary.md). Developers can run `./tests/Verify-Ui.ps1` and `./tests/Verify-Engineering.ps1`. Temporary self-signed trust roots are allowed only on disposable GitHub-hosted runners, never developer workstations. The v0.8.0 Release and [review record](docs/release-v0.8.0.md) record its verification scope. Packaging refuses nonempty publish directories; use a new output directory.
 
 ```powershell
 artifacts/LaunchDesk-win-x64/LaunchDesk.exe --ui-smoke artifacts/ui.png
@@ -161,6 +172,22 @@ Use [Issues](https://github.com/hailaij/LaunchDesk/issues) or pull requests. Run
 [MIT](LICENSE). Runtime terms: [Third-party notices](THIRD-PARTY-NOTICES.md). Network and local data handling: [Privacy Policy](PRIVACY.md).
 
 ## Changelog
+
+### [0.8.0] - 2026-10-12
+
+#### Added
+- Continuous TCP/HTTP health monitoring with optional, default-off rate-limited restarts.
+- CLI control of the existing desktop instance and user-confirmed crash recovery without adopting old PIDs.
+- Per-item UAC helper, separate LocalService hosting, accessibility labels/keyboard editing and bilingual installer.
+
+#### Fixed and Verified
+- Service executable validation uses launch working-directory/PATH resolution; local identity queries release native handles.
+- Packaging refuses stale nonempty payload directories to prevent accidental user-data inclusion.
+- Expanded core inventory to 104 groups; refreshed bilingual/compact screenshots, performance gates and isolated installer data preservation checks.
+
+#### Limitations
+- Unsigned prerelease for manual installation only; production signing and trusted updates remain blocked.
+- Real UAC/SCM, LocalService permissions, screen-reader, physical Win10 and real-service acceptance remain pending.
 
 ### [0.7.1] - 2026-10-12
 

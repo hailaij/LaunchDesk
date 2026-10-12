@@ -1,0 +1,32 @@
+{
+  "version": "0.8.0",
+  "generatedOn": "2026-10-12",
+  "source": "WPF isolated --ui-smoke and --ui-smoke-en-min",
+  "fixtureData": true,
+  "images": [
+    {
+      "name": "first-launch.png",
+      "sha256": "ead88b6607a6b81c8fbeb8a3f99c55202f2df139ac315f2443e265ef88cab424"
+    },
+    {
+      "name": "health-settings.png",
+      "sha256": "87464722e4f04ca77d6e22225feb0b8f03acfaf1cffa89b35bdda3d033003865"
+    },
+    {
+      "name": "main-dark.png",
+      "sha256": "4a3a342e5ba82ef0772a49191b61c6954949a51a4c5f97818b05303fd08c22f8"
+    },
+    {
+      "name": "main-en.png",
+      "sha256": "8ba4bcd05728d63300ff452fbc0774e53aa178c387e19ed83624564afcd73186"
+    },
+    {
+      "name": "main.png",
+      "sha256": "ecb17360c30c35a20b489f76843f3ee66afedd55fcfa519083bc512bf8fcac48"
+    },
+    {
+      "name": "settings.png",
+      "sha256": "a3937eefc96fa35ee03ca328d539233d117200d930e35796c3c83a1a9a4a80d8"
+    }
+  ]
+}

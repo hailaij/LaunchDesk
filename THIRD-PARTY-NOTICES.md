@@ -1,6 +1,12 @@
 # Third-party notices
 
-LaunchDesk source code has no third-party NuGet PackageReference dependencies.
+The service host references Microsoft `System.ServiceProcess.ServiceController`
+10.0.0 and its transitive `System.Diagnostics.EventLog` dependency, under the MIT
+license. Lockfiles pin the resolved packages. Licenses are bundled in
+`runtime-notices/`.
+
+The installer vendors Inno Setup's simplified Chinese translation. Attribution,
+source URL and SHA-256 are recorded in `installer/Languages/README.md`.
 
 Self-contained distributions include Microsoft .NET 10 runtime components,
 Windows Desktop runtime components, and their transitive runtime assets. These

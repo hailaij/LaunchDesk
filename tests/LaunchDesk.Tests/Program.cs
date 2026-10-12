@@ -16,6 +16,28 @@ LaunchItem Worker(string arguments) => new() { Name = "test", Kind = LaunchKind.
     WorkingDirectory = AppContext.BaseDirectory, StopTimeoutSeconds = 1 };
 if (args.Length > 0 && args[0] != "--report")
 {
+    if (args[0] == "--elevated")
+    {
+        await ElevationBroker.RunHelperAsync(args[1], args[2], int.Parse(args[3]), long.Parse(args[4]), _ => Task.CompletedTask, requireAdministrator: false);
+        return 0;
+    }
+    if (args[0] == "--broker-owner")
+    {
+        using var process = await ElevationBroker.StartAsync(Worker("--worker sleep"), self, CancellationToken.None,
+            info => Process.Start(Self(info.ArgumentList.ToArray())));
+        File.WriteAllText(args[1], process.Id.ToString());
+        await Task.Delay(Timeout.Infinite); return 0;
+    }
+    if (args[0] == "--journal-owner")
+    {
+        var journal = new SessionJournal(args[1]); journal.Begin();
+        var item = Worker("--worker sleep"); var config = new Configuration { Items = [item] };
+        new ConfigurationStore(args[1]).Save(config);
+        await using var manager = new ProcessManager(config, args[1]) { Session = journal };
+        await manager.StartAsync(item.Id);
+        File.WriteAllText(args[2], JsonSerializer.Serialize(new ProductChecks.OwnerMarker(item.Id, manager.Snapshot(item.Id).Pid!.Value)));
+        await Task.Delay(Timeout.Infinite); return 0;
+    }
     if (args[0] == "--install-data-probe")
     {
         var data = new ConfigurationStore(args[1]).Load();
@@ -58,6 +80,9 @@ if (args.Length > 0 && args[0] != "--report")
         Console.InputEncoding = new UTF8Encoding(false);
         switch (args[1])
         {
+            case "health-ready":
+                while (!File.Exists(args[2])) await Task.Delay(20);
+                Console.Write("READY"); Console.Out.Flush(); await Task.Delay(Timeout.Infinite); break;
             case "args": Console.Write(JsonSerializer.Serialize(args.Skip(2).ToArray())); return 0;
             case "flood":
                 using (var output = Console.OpenStandardOutput())
@@ -150,6 +175,9 @@ async Task Signal(int pid)
 
 await ReliabilityChecks.Run(root, Test);
 await DataReliabilityChecks.Run(root, Test, Self);
+await HealthChecks.Run(root, Test, Worker);
+await ProductChecks.Run(root, Test, Worker, Self);
+await HostingChecks.Run(root, Test, Worker, Self);
 await CorrectnessChecks.Run(root, Test, Worker);
 await Test("Incremental log cursors handle retention clear and concurrent writes", async () =>
 {

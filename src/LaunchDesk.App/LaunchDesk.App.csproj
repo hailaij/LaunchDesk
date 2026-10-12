@@ -4,6 +4,11 @@
   <PropertyGroup><RuntimeIdentifiers>win-x64</RuntimeIdentifiers></PropertyGroup>
   <ItemGroup><Resource Include="Assets/LaunchDesk.ico" /></ItemGroup>
   <ItemGroup><ProjectReference Include="../LaunchDesk.Core/LaunchDesk.Core.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../LaunchDesk.Host/LaunchDesk.Host.csproj" ReferenceOutputAssembly="false" /></ItemGroup>
+  <Target Name="CopyManagedHost" AfterTargets="Build">
+    <ItemGroup><HostFiles Include="../LaunchDesk.Host/bin/$(Configuration)/$(TargetFramework)/LaunchDesk.Host.*;../LaunchDesk.Host/bin/$(Configuration)/$(TargetFramework)/System.ServiceProcess.ServiceController.dll;../LaunchDesk.Host/bin/$(Configuration)/$(TargetFramework)/System.Diagnostics.EventLog.dll" /></ItemGroup>
+    <Copy SourceFiles="@(HostFiles)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
   <ItemGroup><Using Remove="System.Windows.Forms" /><Using Remove="System.Drawing" /><Using Remove="System.IO" /><Using Include="System.IO" /></ItemGroup>
   <Target Name="GenerateVersionedManifest" BeforeTargets="PrepareForBuild">
     <MakeDir Directories="$(IntermediateOutputPath)" />

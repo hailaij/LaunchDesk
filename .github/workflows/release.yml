@@ -64,6 +64,10 @@ jobs:
             artifacts/signing/package/LaunchDesk-win-x64/LaunchDesk.exe
             artifacts/signing/package/LaunchDesk-win-x64/LaunchDesk.dll
             artifacts/signing/package/LaunchDesk-win-x64/LaunchDesk.Core.dll
+            artifacts/signing/package/LaunchDesk-win-x64/LaunchDesk.Cli.exe
+            artifacts/signing/package/LaunchDesk-win-x64/LaunchDesk.Cli.dll
+            artifacts/signing/package/LaunchDesk-win-x64/LaunchDesk.Host.exe
+            artifacts/signing/package/LaunchDesk-win-x64/LaunchDesk.Host.dll
       - name: Sign application
         uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
         with:

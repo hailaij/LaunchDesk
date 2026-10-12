@@ -4,7 +4,7 @@ $config = & (Join-Path $PSScriptRoot 'Get-ReleaseConfiguration.ps1')
 & (Join-Path $PSScriptRoot 'Verify-ReleaseFiles.ps1') -Directory $Source -Pin $config.certificateSha256 -Mode $Mode
 $files = @(Get-ChildItem -LiteralPath $Source -File)
 switch ($Mode) {
-    App { $allowed = @('LaunchDesk.exe','LaunchDesk.dll','LaunchDesk.Core.dll') }
+    App { $allowed = @('LaunchDesk.exe','LaunchDesk.dll','LaunchDesk.Core.dll','LaunchDesk.Cli.exe','LaunchDesk.Cli.dll','LaunchDesk.Host.exe','LaunchDesk.Host.dll') }
     Uninstaller { $allowed = @(Get-ChildItem -LiteralPath $Destination -Filter 'uninst-*.e32' -File | Select-Object -ExpandProperty Name) }
     Installer { $allowed = @(Get-ChildItem -LiteralPath $Destination -Filter '*-setup.exe' -File | Select-Object -ExpandProperty Name) }
 }

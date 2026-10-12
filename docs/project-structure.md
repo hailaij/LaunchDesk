@@ -28,7 +28,7 @@ LaunchDesk/
 
 Build an installer with `scripts/build-installer.ps1`. The default installer is:
 
-`artifacts/installers/LaunchDesk-v0.7.1-win-x64-setup.exe`
+`artifacts/installers/LaunchDesk-v0.8.0-win-x64-setup.exe`
 
 Keep the complete application directory when moving or copying a ZIP build. Exit an existing tray instance before installing another build; exiting stops its managed processes. Historical local previews may remain under `artifacts/previews/` and are not release downloads.
 
@@ -37,6 +37,7 @@ Keep the complete application directory when moving or copying a ZIP build. Exit
 - Keep source, scripts, documentation and tests in their existing locations so project references and CI remain unchanged.
 - Default build and test commands in the README continue to use their existing output paths.
 - For a versioned package, use `./scripts/package.ps1 -OutputDirectory artifacts/releases/release-vX.Y.Z`.
+- Use a new output directory for each build. Packaging refuses a nonempty existing payload directory to prevent stale or private files entering a release.
 - For a preview, publish into `artifacts/previews/<preview-name>`.
 - Store manual UI-test output in `artifacts/verification/<check-name>`.
 - Never publish local configurations, smoke-test data or logs without checking for private paths and environment variables.

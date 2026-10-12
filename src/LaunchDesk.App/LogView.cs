@@ -17,6 +17,7 @@ public sealed class LogView : ListBox
     private sealed class Line(string value)
     {
         public string Text { get; } = value;
+        public override string ToString() => Text;
         public int AsciiCount { get; } = value.Count(c => c <= 127);
         public int WideCount => Text.Length - AsciiCount;
     }
@@ -150,6 +151,7 @@ public sealed class LogView : ListBox
         content.SetBinding(ForegroundProperty, Ancestor(nameof(Foreground)));
         ItemTemplate = new DataTemplate { VisualTree = content };
         var container = new Style(typeof(ListBoxItem));
+        container.Setters.Add(new Setter(System.Windows.Automation.AutomationProperties.NameProperty, new Binding("Text")));
         container.Setters.Add(new Setter(HeightProperty, 18d));
         container.Setters.Add(new Setter(MinWidthProperty, Ancestor(nameof(ContentWidth))));
         container.Setters.Add(new Setter(PaddingProperty, new Thickness(0)));

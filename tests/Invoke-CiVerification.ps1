@@ -17,6 +17,7 @@ try {
     dotnet run --project tests/LaunchDesk.Tests -c Release --no-build -- --report (Join-Path $output 'test-results.json') --fail-on-skip
     if ($LASTEXITCODE -ne 0) { throw 'Core integration tests failed or skipped' }
     & (Join-Path $PSScriptRoot 'Assert-TestReport.ps1') -Path (Join-Path $output 'test-results.json') -RequireNoSkips
+    & (Join-Path $PSScriptRoot 'Verify-Documentation.ps1') -OutputDirectory (Join-Path $output 'documentation')
     Write-Host 'CI verification: running engineering contracts'
     & (Join-Path $PSScriptRoot 'Verify-Engineering.ps1') -OutputDirectory (Join-Path $output 'engineering-contracts')
     Write-Host 'CI verification: running UI and fatal-cleanup checks'

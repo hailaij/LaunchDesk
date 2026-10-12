@@ -14,28 +14,78 @@ namespace LaunchDesk;
 
 public sealed class LogView : ListBox
 {
-    private sealed class Line(string value) { public string Text { get; } = value; }
+    private sealed class Line(string value)
+    {
+        public string Text { get; } = value;
+        public int AsciiCount { get; } = value.Count(c => c <= 127);
+        public int WideCount => Text.Length - AsciiCount;
+    }
     private sealed class LineCollection : IList, INotifyCollectionChanged
     {
-        public Line[] Values { get; private set; } = [];
+        private readonly List<Line> values = [];
+        private int head;
+        public IEnumerable<Line> Values => values.Skip(head);
+        public int Resets { get; private set; }
         public void Replace(string[] values)
         {
-            var start = values.Length == 0 ? -1 : Array.FindIndex(Values, x => x.Text == values[0]);
-            var next = new Line[values.Length];
-            for (var i = 0; i < values.Length; i++)
-                next[i] = start >= 0 && start + i < Values.Length && Values[start + i].Text == values[i] ? Values[start + i] : new(values[i]);
-            Values = next; CollectionChanged?.Invoke(this, new(NotifyCollectionChangedAction.Reset));
+            // Match the old suffix to the new prefix, including repeated/blank lines.
+            // Prefix links keep repeated output linear rather than trying every match.
+            var prefix = new int[values.Length];
+            for (var i = 1; i < values.Length; i++)
+            {
+                var matched = prefix[i - 1];
+                while (matched > 0 && values[i] != values[matched]) matched = prefix[matched - 1];
+                if (values[i] == values[matched]) matched++;
+                prefix[i] = matched;
+            }
+            var retained = 0; var beforeLast = 0;
+            for (var i = 0; i < Count && values.Length > 0; i++)
+            {
+                beforeLast = retained;
+                var current = this.values[head + i].Text;
+                while (retained > 0 && (retained == values.Length || current != values[retained])) retained = prefix[retained - 1];
+                if (current == values[retained]) retained++;
+            }
+            var end = Count;
+            if (Count > 0 && this.values[^1].Text.Length == 0 && beforeLast > retained)
+            { end--; retained = beforeLast; }
+            var start = end - retained;
+            if (retained == 0)
+            {
+                this.values.Clear(); head = 0;
+                this.values.AddRange(values.Select(x => new Line(x)));
+                Resets++; CollectionChanged?.Invoke(this, new(NotifyCollectionChangedAction.Reset));
+                return;
+            }
+            // WPF does not support range notifications. The head offset avoids shifting
+            // the entire retained buffer for each individual removal.
+            while (start-- > 0)
+            {
+                var removed = this.values[head++];
+                CollectionChanged?.Invoke(this, new(NotifyCollectionChangedAction.Remove, removed, 0));
+            }
+            while (Count > retained)
+            {
+                var index = Count - 1; var removed = this.values[^1]; this.values.RemoveAt(this.values.Count - 1);
+                CollectionChanged?.Invoke(this, new(NotifyCollectionChangedAction.Remove, removed, index));
+            }
+            for (var i = retained; i < values.Length; i++)
+            {
+                var index = Count; var added = new Line(values[i]); this.values.Add(added);
+                CollectionChanged?.Invoke(this, new(NotifyCollectionChangedAction.Add, added, index));
+            }
+            if (head > 4096) { this.values.RemoveRange(0, head); head = 0; }
         }
         public event NotifyCollectionChangedEventHandler? CollectionChanged;
-        public int Count => Values.Length;
-        public object? this[int index] { get => Values[index]; set => throw new NotSupportedException(); }
+        public int Count => values.Count - head;
+        public object? this[int index] { get => values[head + index]; set => throw new NotSupportedException(); }
         public bool IsReadOnly => true;
         public bool IsFixedSize => false;
         public bool IsSynchronized => false;
         public object SyncRoot => this;
-        public int IndexOf(object? value) => value is Line line ? Array.IndexOf(Values, line) : -1;
+        public int IndexOf(object? value) => value is Line line && values.IndexOf(line, head) is var index && index >= 0 ? index - head : -1;
         public bool Contains(object? value) => IndexOf(value) >= 0;
-        public void CopyTo(Array array, int index) => Values.CopyTo(array, index);
+        public void CopyTo(Array array, int index) { foreach (var value in Values) array.SetValue(value, index++); }
         public IEnumerator GetEnumerator() => Values.GetEnumerator();
         public int Add(object? value) => throw new NotSupportedException();
         public void Clear() => throw new NotSupportedException();
@@ -44,7 +94,7 @@ public sealed class LogView : ListBox
         public void RemoveAt(int index) => throw new NotSupportedException();
     }
     private readonly LineCollection lines = new();
-    private string text = "";
+    private string? text = "";
     private ScrollViewer? scroll;
     private int scrollGeneration;
     private int selectionAnchor;
@@ -59,28 +109,29 @@ public sealed class LogView : ListBox
     public double ExtentHeight => scroll?.ExtentHeight ?? 0;
     public int RealizedLineCount => VisualChildren<LogLineView>(this).Count();
     public bool HasRenderedLink => VisualChildren<LogLineView>(this).Any(x => x.Document.Blocks.OfType<Paragraph>().SelectMany(p => p.Inlines.OfType<Hyperlink>()).Any());
+    public int ResetCount => lines.Resets;
     public string Text
     {
-        get => text;
-        set
-        {
-            if (value == text) return;
-            var offset = VerticalOffset;
-            var top = Math.Clamp((int)offset, 0, Math.Max(0, lines.Count - 1));
-            var anchor = lines.Count == 0 ? null : lines.Values[top];
-            var selected = SelectedItems.Cast<Line>().ToHashSet();
-            text = value;
-            var incoming = value.Length == 0 ? [] : value.Split('\n');
-            lines.Replace(incoming);
-            UpdateContentWidth();
-            foreach (var retained in lines.Values.Where(selected.Contains)) SelectedItems.Add(retained);
-            var nextTop = anchor is null ? -1 : Array.IndexOf(lines.Values, anchor);
-            // Preserve the inspected row when the bounded history drops old lines.
-            if (nextTop >= 0) offset += nextTop - top;
-            var restore = Math.Max(0, offset); var generation = ++scrollGeneration;
-            scroll?.ScrollToVerticalOffset(restore);
-            _ = Dispatcher.InvokeAsync(() => { if (generation == scrollGeneration) scroll?.ScrollToVerticalOffset(restore); }, System.Windows.Threading.DispatcherPriority.ContextIdle);
-        }
+        get => text ??= string.Join('\n', lines.Values.Select(x => x.Text));
+        set => SetLines(value.Length == 0 ? [] : value.Split('\n'));
+    }
+    public void SetLines(string[] incoming)
+    {
+        if (incoming.Length == lines.Count && !incoming.Where((value, index) => value != ((Line)lines[index]!).Text).Any()) return;
+        var offset = VerticalOffset;
+        var top = Math.Clamp((int)offset, 0, Math.Max(0, lines.Count - 1));
+        var anchor = lines.Count == 0 ? null : (Line)lines[top]!;
+        var selected = SelectedItems.Cast<Line>().ToHashSet();
+        text = null;
+        lines.Replace(incoming);
+        UpdateContentWidth();
+        foreach (var retained in lines.Values.Where(selected.Contains)) if (!SelectedItems.Contains(retained)) SelectedItems.Add(retained);
+        var nextTop = anchor is null ? -1 : lines.IndexOf(anchor);
+        // Preserve the inspected row when the bounded history drops old lines.
+        if (nextTop >= 0) offset += nextTop - top;
+        var restore = Math.Max(0, offset); var generation = ++scrollGeneration;
+        scroll?.ScrollToVerticalOffset(restore);
+        _ = Dispatcher.InvokeAsync(() => { if (generation == scrollGeneration) scroll?.ScrollToVerticalOffset(restore); }, System.Windows.Threading.DispatcherPriority.ContextIdle);
     }
     public LogView()
     {
@@ -155,7 +206,7 @@ public sealed class LogView : ListBox
             new Typeface(FontFamily, FontStyle, FontWeight, FontStretch), FontSize, Foreground, VisualTreeHelper.GetDpi(this).PixelsPerDip).WidthIncludingTrailingWhitespace;
         var wideCell = FontSize * 1.2;
         // Stable horizontal extent without shaping the thousands of off-screen lines.
-        ContentWidth = Math.Max(1, lines.Values.Select(line => line.Text.Sum(c => c <= 127 ? cell : wideCell)).DefaultIfEmpty(0).Max() + 16);
+        ContentWidth = Math.Max(1, lines.Values.Select(line => line.AsciiCount * cell + line.WideCount * wideCell).DefaultIfEmpty(0).Max() + 16);
     }
     protected override void PrepareContainerForItemOverride(DependencyObject element, object item)
     { base.PrepareContainerForItemOverride(element, item); ((ListBoxItem)element).Height = RowHeight; }
@@ -191,13 +242,13 @@ public sealed class LogView : ListBox
         if (extend)
         {
             for (var i = Math.Max(0, Math.Min(selectionAnchor, index)); i <= Math.Min(lines.Count - 1, Math.Max(selectionAnchor, index)); i++)
-                if (!SelectedItems.Contains(lines.Values[i])) SelectedItems.Add(lines.Values[i]);
+                if (!SelectedItems.Contains(lines[i])) SelectedItems.Add(lines[i]);
         }
         else
         {
             selectionAnchor = index;
-            if (toggle && SelectedItems.Contains(lines.Values[index])) SelectedItems.Remove(lines.Values[index]);
-            else SelectedItems.Add(lines.Values[index]);
+            if (toggle && SelectedItems.Contains(lines[index])) SelectedItems.Remove(lines[index]);
+            else SelectedItems.Add(lines[index]);
         }
     }
     private void CopySelection()

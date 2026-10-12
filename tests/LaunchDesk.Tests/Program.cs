@@ -136,6 +136,83 @@ async Task Signal(int pid)
 
 await ReliabilityChecks.Run(root, Test);
 await CorrectnessChecks.Run(root, Test, Worker);
+await Test("Incremental log cursors handle retention clear and concurrent writes", async () =>
+{
+    using var log = new LogStore(Path.Combine(root, "delta"), Guid.NewGuid(), new());
+    Assert(log.ReadSince(-1) is { Reset: true, Records.Length: 0 }, "initial empty reset");
+    log.Write("stdout", "one\n"); var first = log.ReadSince(-1);
+    log.Write("stderr", "two\n"); var next = log.ReadSince(first.Cursor);
+    Assert(!next.Reset && next.Records.Length == 1 && next.Records[0].Text == "two\n", "append only");
+    Assert(log.ReadSince(next.Cursor).Records.Length == 0, "idle delta");
+    await Task.Run(() => Parallel.For(0, 3100, i => log.Write("stdout", $"record-{i}\n")));
+    var overflow = log.ReadSince(next.Cursor);
+    Assert(overflow.Reset && overflow.Records.Length == 3000, "missed retention requires reset");
+    log.ClearPanel(); var cleared = log.ReadSince(overflow.Cursor);
+    Assert(cleared.Reset && cleared.Records.Length == 0, "clear is visible even without new records");
+    log.Write("stdout", "after-clear");
+    Assert(log.ReadSince(cleared.Cursor).Records.Single().Text == "after-clear", "resume after clear");
+});
+await Test("Incremental log projection reuses records and matches merged snapshots", () =>
+{
+    var a = Guid.NewGuid(); var b = Guid.NewGuid();
+    using var first = new LogStore(Path.Combine(root, "projection"), a, new());
+    using var second = new LogStore(Path.Combine(root, "projection"), b, new());
+    (Guid Id, string Name, LogStore Store)[] sources = [(a, "A", first), (b, "B", second)];
+    var projection = new LogProjection();
+    first.Write("stdout", "\u001b[31mone\u001b[0m\n\n"); second.Write("stderr", "two\n");
+    var initial = projection.Update(sources, true, null, "");
+    Assert(projection.ReadRecords == 2 && projection.FormattedRecords == 2, "initial formatting");
+    Assert(initial.Any(x => x.Contains("[A] [stdout] one")) && initial.Any(x => x.Contains("[B] [stderr] two")), "merged labels and ANSI");
+    projection.Update(sources, true, null, "");
+    Assert(projection.ReadRecords == 0 && projection.FormattedRecords == 0, "idle does not read or format history");
+    first.Write("stdout", "three\n"); projection.Update(sources, true, null, "");
+    Assert(projection.ReadRecords == 1 && projection.FormattedRecords == 1, "only new record formatted");
+    var filtered = projection.Update(sources, true, "stderr", "two");
+    Assert(filtered.Length == 1 && filtered[0].Contains("two") && projection.FormattedRecords == 0, "filter cached text");
+    var renamed = projection.Update([(a, "Renamed", first)], true, null, "");
+    Assert(renamed.Any(x => x.Contains("[Renamed]")) && renamed.All(x => !x.Contains("[B]")), "rename and membership");
+    first.ClearPanel(); Assert(projection.Update([(a, "Renamed", first)], true, null, "").Length == 0, "clear removes cached records");
+    for (var i = 0; i < 3100; i++) first.Write("stdout", $"r-{i}\n");
+    projection.Update([(a, "A", first)], false, null, "");
+    first.Write("stdout", "tail\n"); var rolling = projection.Update([(a, "A", first)], false, null, "");
+    Assert(projection.ReadRecords == 1 && projection.FormattedRecords == 1 && projection.CachedRecords == 3000, "bounded rolling cache");
+    Assert(rolling.Length == 3001 && rolling[^2].EndsWith("tail") && !rolling.Any(x => x.EndsWith("r-100")), "rolling rows current");
+    return Task.CompletedTask;
+});
+await Test("Windows legacy output encoding and UTF-8 chunk boundaries", async () =>
+{
+    var gbk = Encoding.GetEncoding("gbk");
+    foreach (var (encoding, text) in new[] { (Encoding.UTF8, "中文🙂尾部"), (gbk, "中文GBK尾部") })
+    {
+        var bytes = encoding.GetBytes(text);
+        for (var split = 0; split <= bytes.Length; split++)
+        {
+            var decoder = new OutputDecoder("auto", gbk);
+            var actual = decoder.Decode(bytes.AsSpan(0, split)) + decoder.Decode(bytes.AsSpan(split)) + decoder.Decode([], true);
+            Assert(actual == text, "auto decoding at split " + split);
+        }
+        var incremental = new OutputDecoder("auto", gbk);
+        var result = string.Concat(bytes.Select(b => incremental.Decode(new[] { b }))) + incremental.Decode([], true);
+        Assert(result == text, "byte-by-byte decoding");
+    }
+    var incomplete = new OutputDecoder("auto", gbk);
+    Assert(incomplete.Decode(new byte[] { 0xE4 }) == "", "partial UTF-8 buffered");
+    Assert(incomplete.Decode([], true).Length > 0, "incomplete tail not lost");
+    Assert(OutputDecoder.Resolve("system").CodePage == OutputDecoder.SystemEncoding.CodePage, "system code page");
+    var item = Worker("--worker gbk"); item.Encoding = "gbk";
+    await using var manager = new ProcessManager(new() { Items = [item] }, root, Signal);
+    await manager.StartAsync(item.Id); await Until(() => !manager.Snapshot(item.Id).Active);
+    var records = manager.Logs(item.Id).Snapshot().Where(x => x.Channel == "stdout").ToArray();
+    Assert(string.Concat(records.Select(x => x.Text)) == "中文GBK尾部", "native pipe decoding");
+    Assert(records.SelectMany(x => x.RawBytes ?? []).SequenceEqual(gbk.GetBytes("中文GBK尾部")), "raw legacy bytes retained");
+    var automatic = Worker("--worker input"); automatic.Encoding = "auto";
+    await using var manager2 = new ProcessManager(new() { Items = [automatic] }, root, Signal);
+    await manager2.StartAsync(automatic.Id);
+    await Until(() => manager2.Logs(automatic.Id).Snapshot().Any(x => x.Text.Contains("READY")));
+    await manager2.SendInputAsync(automatic.Id, "你好🙂");
+    await Until(() => !manager2.Snapshot(automatic.Id).Active);
+    Assert(string.Concat(manager2.Logs(automatic.Id).Snapshot().Where(x => x.Channel == "stdout").Select(x => x.Text)) == "READYGOT:你好🙂", "auto native UTF-8 output and input");
+});
 await Test("Reliability: blocked stdin has bounded failure and releases lifecycle", async () =>
 {
     var item = Worker("--worker sleep");

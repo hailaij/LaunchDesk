@@ -82,7 +82,7 @@ public sealed class ItemDialog : Window
         FormLayout.Row(form, T("解释器路径"), FormLayout.Browse(interpreter, () =>
         { var dialog = new OpenFileDialog { Filter = T("解释器|*.exe;*.cmd|所有文件|*.*") }; if (dialog.ShowDialog(this) == true) interpreter.Text = dialog.FileName; }));
         FormLayout.Section(form, T("日志与环境"));
-        var encoding = new ComboBox { ItemsSource = new[] { "utf-8", "gbk", "utf-16", "windows-1252" }, Text = item.Encoding, IsEditable = true };
+        var encoding = new ComboBox { ItemsSource = new[] { "auto", "system", "utf-8", "gbk", "utf-16", "windows-1252" }, Text = item.Encoding, IsEditable = true };
         FormLayout.Row(form, T("日志 / 输入编码"), encoding);
         var env = FormLayout.Text(string.Join(Environment.NewLine, item.Environment.Select(x => x.Key + "=" + x.Value)), true);
         FormLayout.Row(form, T("环境变量"), env);

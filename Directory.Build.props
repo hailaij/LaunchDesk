@@ -2,7 +2,7 @@
   <PropertyGroup>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.6.0</Version>
+    <Version>0.7.0</Version>
     <Deterministic>true</Deterministic>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>

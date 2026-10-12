@@ -5,12 +5,16 @@ using System.Text.RegularExpressions;
 namespace LaunchDesk.Core;
 
 public sealed record LogRecord(DateTimeOffset Time, string Channel, string Text, byte[]? RawBytes = null);
+public sealed record LogDelta(long Cursor, long FirstCursor, bool Reset, LogRecord[] Records);
 public sealed partial class LogStore : IDisposable
 {
     private readonly object gate = new();
     private readonly object diskGate = new();
     private readonly Queue<string> cleanupWarnings = new();
     private readonly Queue<LogRecord> memory = new();
+    private readonly Queue<long> cursors = new();
+    private long cursor;
+    private long resetCursor;
     private readonly Preferences preferences;
     private StreamWriter? writer;
     private string? currentFile;
@@ -48,10 +52,10 @@ public sealed partial class LogStore : IDisposable
             writer.WriteLine(serialized); writer.Flush(); bytes += Encoding.UTF8.GetByteCount(serialized) + 2;
             lock (gate)
             {
-                memory.Enqueue(record); characters += text.Length; revision++;
+                memory.Enqueue(record); cursors.Enqueue(++cursor); characters += text.Length; revision++;
                 Interlocked.Exchange(ref changeStamp, Interlocked.Increment(ref sequence));
                 while (memory.Count > 3000 || characters > 500_000)
-                    characters -= memory.Dequeue().Text.Length;
+                { characters -= memory.Dequeue().Text.Length; cursors.Dequeue(); }
             }
         }
     }
@@ -87,7 +91,18 @@ public sealed partial class LogStore : IDisposable
         catch (UnauthorizedAccessException error) { warn?.Invoke(error.Message); }
     }
     public LogRecord[] Snapshot() { lock (gate) return memory.ToArray(); }
-    public void ClearPanel() { lock (gate) { memory.Clear(); characters = 0; recentLoaded = true; revision++; Interlocked.Exchange(ref changeStamp, Interlocked.Increment(ref sequence)); } }
+    public LogDelta ReadSince(long after)
+    {
+        lock (gate)
+        {
+            var first = cursors.Count == 0 ? cursor + 1 : cursors.Peek();
+            var reset = after < resetCursor || after > cursor || after < first - 1;
+            if (after == cursor) return new(cursor, first, false, []);
+            var skip = reset ? 0 : (int)Math.Clamp(after - first + 1, 0, memory.Count);
+            return new(cursor, first, reset, memory.Skip(skip).ToArray());
+        }
+    }
+    public void ClearPanel() { lock (gate) { memory.Clear(); cursors.Clear(); resetCursor = ++cursor; characters = 0; recentLoaded = true; revision++; Interlocked.Exchange(ref changeStamp, Interlocked.Increment(ref sequence)); } }
     public void DeleteHistory()
     {
         lock (diskGate)
@@ -136,18 +151,21 @@ public sealed partial class LogStore : IDisposable
             // A concurrent writer owns the live view; do not duplicate captured records.
             if (disposed || memory.Count > 0 || changeStamp != initialStamp) return;
             recentLoaded = true;
-            foreach (var record in loaded) memory.Enqueue(record);
+            resetCursor = ++cursor;
+            foreach (var record in loaded) { memory.Enqueue(record); cursors.Enqueue(++cursor); }
             characters = count;
             revision++;
             Interlocked.Exchange(ref changeStamp, Interlocked.Increment(ref sequence));
         }
     }
     public static (Guid Id, string Name, LogRecord Record)[] SnapshotMerged((Guid Id, string Name, LogStore Store)[] sources)
+        => MergeSnapshots(sources.Select(x => (x.Id, x.Name, x.Store.Snapshot())).ToArray());
+    public static (Guid Id, string Name, LogRecord Record)[] MergeSnapshots((Guid Id, string Name, LogRecord[] Records)[] sources)
     {
         var queue = new PriorityQueue<(Guid Id, string Name, LogRecord Record), (DateTimeOffset Time, long Sequence)>();
         long sequence = 0;
         foreach (var source in sources)
-            foreach (var record in source.Store.Snapshot())
+            foreach (var record in source.Records)
             {
                 queue.Enqueue((source.Id, source.Name, record), (record.Time, sequence++));
                 if (queue.Count > 3000) queue.Dequeue();
@@ -267,7 +285,7 @@ public sealed partial class LogStore : IDisposable
         {
             disposed = true;
             try { writer?.Dispose(); }
-            finally { writer = null; lock (gate) { memory.Clear(); characters = 0; } }
+            finally { writer = null; lock (gate) { memory.Clear(); cursors.Clear(); resetCursor = ++cursor; characters = 0; } }
         }
     }
 }

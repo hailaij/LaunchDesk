@@ -26,7 +26,9 @@ foreach ($mode in @('--ui-smoke', '--ui-smoke-en-min')) {
     $metricsPath = Join-Path ([IO.Path]::GetDirectoryName($path)) ([IO.Path]::GetFileNameWithoutExtension($path) + '-virtualization.json')
     $metrics = Get-Content -LiteralPath $metricsPath -Raw | ConvertFrom-Json
     if ($metrics.totalShortLines -ne 30000 -or -not $metrics.virtualCopyAllPassed -or -not $metrics.selectionAndReadingPositionPreserved) { throw 'Virtualization evidence incomplete' }
+    & (Join-Path $PSScriptRoot 'Assert-LogPerformance.ps1') -ScreenshotPath $path
 }
+& (Join-Path $PSScriptRoot 'Verify-LogPerformanceContracts.ps1') -ScreenshotPath (Join-Path $output 'ui-smoke.png') -OutputDirectory (Join-Path $output 'performance-contracts')
 foreach ($mode in @('--timer', '--loaded')) {
     dotnet run --project tests/LaunchDesk.UiChecks -c Release --no-build -- $mode (Join-Path $output ($mode.TrimStart('-') + '.json'))
     if ($LASTEXITCODE -ne 0) { throw "UI host failed: $mode" }
@@ -36,5 +38,5 @@ foreach ($mode in @('--timer', '--loaded')) {
     if ($mode -eq '--loaded' -and $result.loadedExceptionEscaped) { throw 'Loaded exception escaped' }
 }
 & (Join-Path $PSScriptRoot 'Verify-UiFailures.ps1') -AppPath $exe -OutputDirectory (Join-Path $output 'fatal-cleanup')
-@{ status = 'passed'; screenshotPixelChecks = $true; timerRecovery = $true; fatalCleanup = $true } | ConvertTo-Json |
+@{ status = 'passed'; screenshotPixelChecks = $true; timerRecovery = $true; fatalCleanup = $true; logPerformanceGate = $true } | ConvertTo-Json |
     Set-Content -LiteralPath (Join-Path $output 'summary.json') -Encoding utf8

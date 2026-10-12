@@ -101,6 +101,7 @@ public partial class MainWindow : Window
     private readonly CancellationTokenSource startupUpdateCancellation = new();
     private ReleaseUpdate? pendingUpdate;
     private long lastRevision = -1;
+    private readonly LogProjection logProjection = new();
     private Guid? lastSelected;
     private readonly HashSet<Guid> collapsedFolders = [];
     private readonly Dictionary<Guid, CancellationTokenSource> folderStarts = [];
@@ -338,6 +339,7 @@ public partial class MainWindow : Window
             File.WriteAllText(Path.ChangeExtension(smokePath, null) + "-live-log-performance.json", System.Text.Json.JsonSerializer.Serialize(new { batches = 10, linesPerBatch = 1000, refreshAndLayoutMs = liveTimings, displayedCharacters = LogBox.Text.Length, renderedRows = LogBox.RealizedLineCount, totalRows = LogBox.Items.Count }));
             Capture(this, Path.ChangeExtension(smokePath, null) + "-stress.png");
             await VerifyVirtualLogAsync();
+            await VerifyIncrementalLogAsync();
             RefreshTick(() => throw new IOException("Injected transient refresh failure"));
             var recovered = false; RefreshTick(() => { Refresh(); recovered = true; });
             if (!recovered || !timer.IsEnabled || !File.ReadAllText(diagnostics.PathName).Contains("Injected transient refresh failure"))
@@ -402,6 +404,40 @@ public partial class MainWindow : Window
         selectable.Selection.Select(selectable.Document.ContentStart, selectable.Document.ContentStart); LogBox.Focus();
         File.WriteAllText(Path.ChangeExtension(smokePath!, null) + "-virtualization.json", System.Text.Json.JsonSerializer.Serialize(new { totalShortLines = 30000, updateAndLayoutMs = timings, selectionAndReadingPositionPreserved = true, virtualCopyAllPassed = true }));
         LogBox.Text = oldText; PauseLog.IsChecked = false; lastRevision = -1; Refresh();
+    }
+    private async Task VerifyIncrementalLogAsync()
+    {
+        PauseLog.IsChecked = true;
+        AutoScroll.IsChecked = false;
+        await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        var payload = Enumerable.Range(0, 3000).Select(x => $"incremental-{x} {new string('x', 80)}").ToList();
+        LogBox.SetLines(payload.ToArray()); LogBox.ScrollToVerticalOffset(1500);
+        await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        LogBox.SelectRow(1500, false, false);
+        var selected = LogBox.SelectedText; var resets = LogBox.ResetCount;
+        var timings = new List<double>(); var allocations = new List<long>(); var maxRows = 0;
+        for (var batch = 0; batch < 40; batch++)
+        {
+            payload.RemoveRange(0, 20);
+            payload.AddRange(Enumerable.Range(0, 20).Select(x => $"new-{batch}-{x} http://localhost:8080/"));
+            var before = GC.GetAllocatedBytesForCurrentThread(); var measure = Stopwatch.StartNew();
+            LogBox.SetLines(payload.ToArray());
+            allocations.Add(GC.GetAllocatedBytesForCurrentThread() - before);
+            await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+            timings.Add(measure.Elapsed.TotalMilliseconds); maxRows = Math.Max(maxRows, LogBox.RealizedLineCount);
+            if (LogBox.SelectedText != selected || Math.Abs(LogBox.VerticalOffset - (1500 - 20 * (batch + 1))) > 1)
+                throw new InvalidOperationException($"Incremental retention changed selected text or reading anchor: batch={batch}, offset={LogBox.VerticalOffset}, expected={1500 - 20 * (batch + 1)}, selected={LogBox.SelectedText}, original={selected}.");
+        }
+        File.WriteAllText(Path.ChangeExtension(smokePath!, null) + "-incremental-performance.json",
+            System.Text.Json.JsonSerializer.Serialize(new { batches = 40, retainedRows = payload.Count, rowsPerBatch = 20,
+                refreshAndLayoutMs = timings, refreshAllocatedBytes = allocations, resets = LogBox.ResetCount - resets,
+                maxRenderedRows = maxRows, selectionAndAnchorPreserved = true }));
+        LogBox.SetLines(["repeat", "repeat", "unique", "tail"]); LogBox.SelectRow(2, false, false);
+        resets = LogBox.ResetCount;
+        LogBox.SetLines(["repeat", "unique", "tail", "fresh"]);
+        if (LogBox.SelectedText != "unique" || LogBox.ResetCount != resets)
+            throw new InvalidOperationException("Repeated log lines lost retained row identity.");
+        AutoScroll.IsChecked = true; PauseLog.IsChecked = false; lastRevision = -1; Refresh();
     }
     private void ShowPendingUpdate()
     {
@@ -501,30 +537,12 @@ public partial class MainWindow : Window
         var revision = members.Length == 0 ? 0 : members.Max(x => manager.Logs(x.Id).ChangeStamp);
         LogBox.Opacity = PauseLog.IsChecked == true ? 0.65 : 1;
         if (PauseLog.IsChecked == true || lastRevision == revision) return;
-        lastRevision = revision;
         var channel = (ChannelFilter.SelectedItem as ComboBoxItem)?.Content?.ToString();
-        var text = new StringBuilder();
-        var records = LogStore.SnapshotMerged(members.Select(x => (x.Id, x.Name, manager.Logs(x.Id))).ToArray());
-        foreach (var entry in records.Where(x => ChannelFilter.SelectedIndex == 0 || x.Record.Channel == channel))
-        {
-            var record = entry.Record;
-            if (record.Text.Length == 0) continue;
-            var content = LogStore.DisplayText(record.Text);
-            var lines = selected.IsFolder ? content.TrimEnd('\n').Split('\n') : [content];
-            foreach (var line in lines)
-            {
-                text.Append('[').Append(record.Time.ToString("HH:mm:ss.fff")).Append("] ");
-                if (selected.IsFolder) text.Append('[').Append(entry.Name).Append("] ");
-                text.Append('[').Append(record.Channel).Append("] ").Append(line);
-                if (!line.EndsWith('\n')) text.AppendLine();
-            }
-        }
-        var value = text.ToString();
-        if (value.Length > 500_000) value = value[^500_000..];
-        if (!string.IsNullOrWhiteSpace(LogSearch.Text)) value = string.Join(Environment.NewLine,
-            value.Split('\n').Where(x => x.Contains(LogSearch.Text, StringComparison.OrdinalIgnoreCase)));
+        var incoming = logProjection.Update(members.Select(x => (x.Id, x.Name, manager.Logs(x.Id))).ToArray(),
+            selected.IsFolder, ChannelFilter.SelectedIndex == 0 ? null : channel, LogSearch.Text);
         var horizontalOffset = LogBox.HorizontalOffset;
-        LogBox.Text = value;
+        LogBox.SetLines(incoming);
+        lastRevision = revision;
         if (AutoScroll.IsChecked == true)
         {
             LogBox.ScrollToEnd();

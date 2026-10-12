@@ -248,14 +248,12 @@ public sealed class ProcessManager : IAsyncDisposable
     }
     private static async Task PumpAsync(Stream stream, string encoding, LogStore logs, string channel, Action<string, string> observe)
     {
-        var decoder = Encoding.GetEncoding(encoding).GetDecoder();
+        var decoder = new OutputDecoder(encoding);
         var buffer = new byte[8192];
-        var characters = new char[Encoding.GetEncoding(encoding).GetMaxCharCount(buffer.Length)];
         while (true)
         {
             var count = await stream.ReadAsync(buffer).ConfigureAwait(false);
-            var decoded = decoder.GetChars(buffer, 0, count, characters, 0, count == 0);
-            var text = new string(characters, 0, decoded);
+            var text = decoder.Decode(buffer.AsSpan(0, count), count == 0);
             logs.Write(channel, text, count > 0 ? buffer[..count] : null);
             observe(channel, text);
             if (count == 0) return;
@@ -271,7 +269,7 @@ public sealed class ProcessManager : IAsyncDisposable
             NativeProcess native;
             lock (r.Sync) native = r.Current ?? throw new InvalidOperationException("启动项未运行。");
             var encoding = Config.Items.Single(x => x.Id == id).Encoding;
-            var bytes = Encoding.GetEncoding(encoding).GetBytes(text + "\r\n");
+            var bytes = OutputDecoder.Resolve(encoding).GetBytes(text + "\r\n");
             async Task WriteAndFlushAsync()
             {
                 await native.Input.WriteAsync(bytes).ConfigureAwait(false);

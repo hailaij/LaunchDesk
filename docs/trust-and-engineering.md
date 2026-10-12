@@ -4,12 +4,17 @@ Included in v0.6.0 (unsigned prerelease, 2026-10-12). The original local verific
 was performed on 2026-10-11 before the version bump. Cloud CI acceptance is recorded separately.
 No real services were interrupted; no production signing approval or silent installation is implied.
 
+Current scope and evidence index: [Verification status](verification-status.md).
+The local working tree has 76 test groups; remote commit `43449c5` has 73.
+
 ## 测试诚实性
 
 核心报告保持 JSON 数组，增加 `status`（passed/failed/skipped）、`skipped`、`reason`。
 `passed` 在跳过时为 null，不能把未执行算作通过。`--fail-on-skip` 使任何跳过返回退出码 1；
-无匹配用例返回 2。`tests/Assert-TestReport.ps1` 验证当前 73 组、名称唯一、状态一致、零失败，
+无匹配用例返回 2。`tests/Assert-TestReport.ps1` 验证当前 76 组、名称唯一、状态一致、零失败，
 CI 额外要求零跳过。新增或删除用例必须同步这个清单计数。
+
+日志增量刷新、界面性能预算与负向门禁测试见 [Log Performance](log-performance.md)。
 
 4 个独立签名组覆盖有效签名、错误发行者、篡改后的 PE、真实未签名 PE。
 没有指定样本时，前三组明确跳过，不再读取固定 D 盘路径或假装通过。
@@ -83,7 +88,7 @@ Inno 使用官方支持的手工签名卸载器缓存流程，而非提供空的
 便携 ZIP 的 SHA-256 不是 ZIP 的发行者数字签名；自有 PE 有 Authenticode，应用内更新只
 下载验签后的 setup.exe。仍不静默安装、不承诺安装失败自动还原，单叶 pin 的轮换尚需迁移版本。
 
-## 本次验证与未完成项
+## 原始本机验证（历史记录）
 
 - 本机锁定还原及构建成功，零警告/错误；生成 manifest 为 0.5.0.0。
 - `artifacts/verification/engineering/test-results.json`：73 passed、0 failed、0 skipped。
@@ -94,10 +99,21 @@ Inno 使用官方支持的手工签名卸载器缓存流程，而非提供空的
   两个致命异常 fixture 的根进程及各两个观察到的子进程均退出，诊断文件存在。
 - 零 pin 的实际开发打包核对通过；另一个隔离 Core 构建的非空 pin 读取核对通过，错 pin 拒绝。
 - Inno 6.7.3 的待签 `.e32` 准备阶段实际通过，未伪造已签安装器。
-- PowerShell 脚本语法及 YAML 结构解析通过；**GitHub-hosted 自签生成、整个 CI workflow、
-  SignPath 来源策略、正式三阶段签名及公开发布均尚未云端执行**。必须在推送并接入配置后验收。
+- PowerShell 脚本语法及 YAML 结构解析通过。此段为最初的本机验收记录；随后完成的
+  GitHub-hosted 自签与 CI 演练见下一节。SignPath 来源策略、正式三阶段签名及可信公开发布仍未执行。
 - 未导入本机测试根证书；未安装工具链；未更改安全设置。原来的互斥锁与更新缓存竞态加固
   不属于这次工程化完成声明。
+
+## 云端隔离签名演练（2026-10-12）
+
+[Actions run 38215650657](https://github.com/hailaij/LaunchDesk/actions/runs/38215650657)
+针对远端 `main` 提交 `43449c5a876096dd0af75fcce9fa482e78d342f9`，完整 workflow 成功。
+主测试报告为 **73 passed、0 failed、0 skipped**，4 种签名场景均实际执行；5 个工程负向门禁、
+双语界面及致命异常清理通过。详细证据及限制见 [隔离签名演练](signing-drill.md)。
+
+清理阶段日志和成功退出证明严格删除命令正常完成，但没有独立的清理后证书库快照。
+本机未导入证书，测试私钥未导出。此次 CI **不包含**本地尚未推送的 Windows 10 兼容改动、
+日志增量刷新与性能门禁，也不代表正式 SignPath 签名或安装包生产签名完成。
 
 ## English Summary
 
@@ -111,5 +127,7 @@ The protected manual release workflow signs application, Inno cached uninstaller
 in separate SignPath requests. Native publisher/timestamp/embedded-pin verification precedes
 final hashing; a separate job rechecks the signed handoff before draft/public release. Missing
 production signing configuration blocks publication. No signing approval, private key or silent
-installation is implied. Local tests pass with an existing publicly signed native fixture; the
-disposable CI fixture and real SignPath/release path still require cloud acceptance.
+installation is implied. Local tests pass with an existing publicly signed native fixture.
+The disposable CI fixture and full verification workflow passed on remote commit `43449c5`
+(73 groups, zero failures/skips), run 38215650657. Uncommitted local changes have 76 locally
+passing groups but no cloud acceptance yet. The production SignPath/release path remains untested.

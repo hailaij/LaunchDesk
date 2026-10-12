@@ -1,5 +1,7 @@
 # LaunchDesk
 
+Output encoding: new items default to `auto`. Each output pipe starts with UTF-8 and switches to the Windows system ANSI code page on invalid UTF-8 bytes. `system` always uses that ANSI code page. Select `gbk` explicitly for legacy Chinese PowerShell/BAT output or `utf-8` for npm/Node. Existing settings are preserved; restart the item after changing encoding. Historical logs are not re-decoded. Detection is heuristic: mixed encodings or non-UTF-8 bytes that happen to be valid UTF-8 require an explicit setting. Input in auto mode uses UTF-8.
+
 [Simplified Chinese](../README.md) | [English](../README.en.md)
 
 Windows 10/11 x64 launch manager. Run `LaunchDesk.exe`; the self-contained application includes its runtime.

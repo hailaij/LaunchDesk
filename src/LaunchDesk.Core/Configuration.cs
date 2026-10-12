@@ -28,7 +28,7 @@ public sealed class LaunchItem
     public string Arguments { get; set; } = "";
     public string WorkingDirectory { get; set; } = "";
     public string Interpreter { get; set; } = "";
-    public string Encoding { get; set; } = "utf-8";
+    public string Encoding { get; set; } = "auto";
     public Dictionary<string, string> Environment { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public List<Guid> Dependencies { get; set; } = [];
     public bool AutoStart { get; set; }
@@ -205,7 +205,7 @@ public sealed class ConfigurationStore
                 throw new InvalidDataException("启动项配置无效：" + item.Name);
             foreach (var value in new[] { item.Name, item.Note, item.Target, item.Arguments, item.WorkingDirectory, item.Interpreter, item.StopInput })
                 if (value is null || value.Contains('\0')) throw new InvalidDataException("配置包含空值或 NUL。");
-            _ = System.Text.Encoding.GetEncoding(item.Encoding);
+            _ = OutputDecoder.Resolve(item.Encoding);
             if (item.Environment.Any(x => string.IsNullOrWhiteSpace(x.Key) || x.Key.Contains('=') ||
                 x.Key.Contains('\0') || x.Value is null || x.Value.Contains('\0')))
                 throw new InvalidDataException("环境变量格式无效。");

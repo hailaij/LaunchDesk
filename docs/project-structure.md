@@ -28,7 +28,7 @@ LaunchDesk/
 
 Build an installer with `scripts/build-installer.ps1`. The default installer is:
 
-`artifacts/installers/LaunchDesk-v0.6.0-win-x64-setup.exe`
+`artifacts/installers/LaunchDesk-v0.7.0-win-x64-setup.exe`
 
 Keep the complete application directory when moving or copying a ZIP build. Exit an existing tray instance before installing another build; exiting stops its managed processes. Historical local previews may remain under `artifacts/previews/` and are not release downloads.
 

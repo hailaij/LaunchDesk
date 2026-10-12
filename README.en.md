@@ -2,7 +2,7 @@
 
 [Simplified Chinese](README.md) | [English](README.en.md)
 
-A Windows desktop manager for scripts, commands and applications, with real-time logs. Current version: **v0.6.0** (unsigned prerelease, early development).
+A Windows desktop manager for scripts, commands and applications, with real-time logs. Current version: **v0.7.0** (unsigned prerelease, early development).
 
 **Release status:** This is an unsigned prerelease for manual download and installation only. Missing production signing configuration still blocks the trusted update pipeline. Test certificates never enter production trust. See [Trust and engineering verification](docs/trust-and-engineering.md).
 
@@ -10,11 +10,17 @@ A Windows desktop manager for scripts, commands and applications, with real-time
 
 ## Features
 
+### New and Fixed in v0.7.0
+
+- Windows 10 MDL2 icons and automatic/system log decoding for UTF-8 and legacy output.
+- Incremental log cursors, cached formatting, retained row reuse and performance gates.
+- 76 main tests and scoped verification evidence; reproduced data-saving issues remain open.
+
 ### New and Fixed in v0.6.0
 
 - Reliability fixes for concurrent logs, backup recovery, command quoting, relative paths and runtime cleanup after stopping/deleting items.
 - Virtualized log rows preserve selection, copying, links and reading positions; atomic exports and local rotating error diagnostics.
-- 73 test groups distinguish passed, failed and skipped. CI covers isolated signatures, bilingual UI and fatal process cleanup.
+- The development inventory has 76 groups with explicit pass/fail/skip status. The remote v0.6.0 commit passed its 73-group isolated signing CI; see [Verification status](docs/verification-status.md) for scope.
 - Locked dependencies, SHA-pinned Actions and unified SDK/version sources. A strict signing/verification/hashing/release pipeline awaits production certificate configuration.
 
 ### New and Fixed in v0.5.0
@@ -58,7 +64,7 @@ A Windows desktop manager for scripts, commands and applications, with real-time
 
 Windows 10/11 x64. Self-contained packages include the .NET runtime. Keep the entire extracted directory and launch `LaunchDesk.exe`.
 
-Manually download `LaunchDesk-v0.6.0-win-x64-setup.exe` or the portable `LaunchDesk-v0.6.0-win-x64.zip` from [Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.6.0). SHA-256 sidecar files are provided. This unsigned prerelease is not a trusted in-app update.
+Manually download `LaunchDesk-v0.7.0-win-x64-setup.exe` or the portable `LaunchDesk-v0.7.0-win-x64.zip` from [Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.7.0). SHA-256 sidecar files are provided. This unsigned prerelease is not a trusted in-app update.
 
 First launch is empty. No local services are preconfigured or executed. Closing the window hides it to the tray. Use **Exit** in the tray menu to stop all managed processes and drain logs before upgrading. Single-instance activation may restore an already running older copy; window titles show the actual assembly version, and cross-version/path launches show a warning.
 
@@ -120,13 +126,13 @@ dotnet run --project tests/LaunchDesk.Tests -c Release -- --report artifacts/tes
 ./scripts/build-installer.ps1 -CompilerPath 'D:\tool\Inno Setup 6\ISCC.exe'
 ```
 
-Installer output: `artifacts/installers/LaunchDesk-v0.6.0-win-x64-setup.exe` plus SHA-256. Installs for the current user to `%LOCALAPPDATA%\Programs\LaunchDesk`, creates Start menu and optional desktop shortcuts, and does not start the app by default. Exit the tray instance before update/uninstall. Uninstall retains user data and removes only login startup entries belonging to its install path. The installer is English; the application supports Chinese/English. Certificates are not configured, so current installers remain unsigned. Installation/update/uninstall scenarios were verified for earlier versions; this version reruns build/core/UI checks, not full installation acceptance or real-service tests.
+Installer output: `artifacts/installers/LaunchDesk-v0.7.0-win-x64-setup.exe` plus SHA-256. Installs for the current user to `%LOCALAPPDATA%\Programs\LaunchDesk`, creates Start menu and optional desktop shortcuts, and does not start the app by default. Exit the tray instance before update/uninstall. Uninstall retains user data and removes only login startup entries belonging to its install path. The installer is English; the application supports Chinese/English. Certificates are not configured, so current installers remain unsigned. Installation/update/uninstall scenarios were verified for earlier versions; this version reruns build/core/UI checks, not full installation acceptance or real-service tests.
 
 See [Project structure](docs/project-structure.md). Generated files belong under `artifacts/`.
 
 Tests use isolated directories and disposable processes. They cover output flooding, UTF-8 chunking, GBK, trailing partial lines, raw bytes, BAT paths/pause, npm, stdin, environment, dependencies, lifecycle races, restart limits, log failures and process-tree cleanup. Three real services remain untested at the user's request.
 
-The test inventory has 73 groups. Without a signing fixture, three groups are explicitly skipped; strict CI rejects skips. See [Local test evidence](docs/test-summary.md). Developers can run `./tests/Verify-Ui.ps1` and `./tests/Verify-Engineering.ps1`. Temporary self-signed trust roots are allowed only on disposable GitHub-hosted runners, never developer workstations.
+The development test inventory has 76 groups. Without a signing fixture, three groups are explicitly skipped; strict CI rejects skips. See [Test evidence](docs/test-summary.md). Developers can run `./tests/Verify-Ui.ps1` and `./tests/Verify-Engineering.ps1`. Temporary self-signed trust roots are allowed only on disposable GitHub-hosted runners, never developer workstations. The incremental-log performance gates passed locally, not in cloud CI yet; the remote 73-group result does not cover unpushed changes.
 
 ```powershell
 artifacts/LaunchDesk-win-x64/LaunchDesk.exe --ui-smoke artifacts/ui.png
@@ -146,6 +152,25 @@ Use [Issues](https://github.com/hailaij/LaunchDesk/issues) or pull requests. Run
 [MIT](LICENSE). Runtime terms: [Third-party notices](THIRD-PARTY-NOTICES.md). Network and local data handling: [Privacy Policy](PRIVACY.md).
 
 ## Changelog
+
+### [0.7.0] - 2026-10-12
+
+#### Added
+- Automatic/system log encodings, incremental cursors and formatting cache; existing explicit encodings remain unchanged.
+- Performance budgets and five negative gate tests; 76 main test groups.
+- Independent data/lifecycle reproducers, verification index and isolated signing drill documentation.
+
+#### Fixed
+- Windows 10 missing icon glyphs, legacy Chinese output and split UTF-8 decoding.
+- Retained duplicate-row identity, selection and reading position without routine full resets.
+
+#### Optimized
+- New-record processing, retained rows, cached width counts and lazy full-text materialization.
+
+#### Limitations
+- Unsigned prerelease, manual installation only; production signing/trusted updates remain blocked.
+- Physical Windows 10, real services and full installation/upgrade acceptance not completed.
+- Reproduced saving/migration edge cases remain unfixed; no independent post-cleanup certificate-store snapshot.
 
 ### [0.6.0] - 2026-10-12
 

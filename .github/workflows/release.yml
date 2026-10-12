@@ -56,7 +56,7 @@ jobs:
           ./scripts/package.ps1 -OutputDirectory artifacts/signing/package -UpdateSignerSha256 '${{ steps.signing.outputs.certificateSha256 }}'
       - name: Upload application signing inputs
         id: app-input
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: app-signing-input
           if-no-files-found: error
@@ -87,7 +87,7 @@ jobs:
           ./scripts/Compile-SignedInstaller.ps1 -PublishDirectory artifacts/signing/package/LaunchDesk-win-x64 -SigningDirectory artifacts/signing/uninstaller -PrepareUninstaller
       - name: Upload uninstaller signing input
         id: uninstaller-input
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: uninstaller-signing-input
           if-no-files-found: error
@@ -111,7 +111,7 @@ jobs:
           ./scripts/Compile-SignedInstaller.ps1 -PublishDirectory artifacts/signing/package/LaunchDesk-win-x64 -SigningDirectory artifacts/signing/uninstaller
       - name: Upload installer signing input
         id: installer-input
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: installer-signing-input
           if-no-files-found: error
@@ -134,12 +134,12 @@ jobs:
           ./scripts/Import-SignedFiles.ps1 -Source artifacts/signing/installer-returned -Destination artifacts/signing/installer -Mode Installer
           ./tests/Verify-Ui.ps1 -AppPath artifacts/signing/package/LaunchDesk-win-x64/LaunchDesk.exe -OutputDirectory artifacts/verification/signed-ui
           ./scripts/Finalize-Release.ps1 -PublishDirectory artifacts/signing/package/LaunchDesk-win-x64 -InstallerDirectory artifacts/signing/installer
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: verified-release
           if-no-files-found: error
           path: artifacts/release/*
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: signed-release-evidence

@@ -7,6 +7,7 @@ internal sealed class LifecycleProbe : IManagedProcess
     private readonly LaunchItem item;
     private readonly NativeProcess native;
     private readonly int id;
+    private readonly bool trackReads = Environment.GetEnvironmentVariable("LAUNCHDESK_TRACK_PIPE_READS") == "1";
     private readonly Stopwatch elapsed = Stopwatch.StartNew();
     public LifecycleProbe(LaunchItem item)
     {
@@ -14,8 +15,8 @@ internal sealed class LifecycleProbe : IManagedProcess
     }
     private ReadProbe? output, error;
     private Task? exit;
-    public Stream Output => output ??= new(native.Output);
-    public Stream Error => error ??= new(native.Error);
+    public Stream Output => trackReads ? output ??= new(native.Output) : native.Output;
+    public Stream Error => trackReads ? error ??= new(native.Error) : native.Error;
     public Stream Input => native.Input;
     public int Id => id;
     public int ExitCode => native.ExitCode;
@@ -38,7 +39,7 @@ internal sealed class LifecycleProbe : IManagedProcess
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
         { root = new { Id, Unavailable = exception.Message }; }
-        var evidence = new { At = DateTimeOffset.UtcNow, ElapsedMs = elapsed.ElapsedMilliseconds,
+        var evidence = new { At = DateTimeOffset.UtcNow, ElapsedMs = elapsed.ElapsedMilliseconds, TrackReads = trackReads,
             Command = LaunchCommand.From(item), Snapshot = manager.Snapshot(item.Id), Root = root,
             JobExitTask = exit?.Status.ToString(), StdoutBytes = output?.Bytes, StdoutEof = output?.Eof,
             StderrBytes = error?.Bytes, StderrEof = error?.Eof,

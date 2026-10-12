@@ -143,10 +143,10 @@ if (args.Length > 0 && args[0] != "--report")
             case "env": Console.Write(Environment.GetEnvironmentVariable("LAUNCHDESK_TEST") + "|" + Environment.CurrentDirectory); return 0;
             case "spawn":
                 using (var child = Process.Start(Self("--worker", "sleep"))!)
-                { File.WriteAllText(args[2], Environment.ProcessId + "," + child.Id); Thread.Sleep(Timeout.Infinite); }
+                { PublishMarker(args[2], Environment.ProcessId + "," + child.Id); Thread.Sleep(Timeout.Infinite); }
                 break;
             case "detach":
-                using (var child = Process.Start(Self("--worker", "sleep"))!) File.WriteAllText(args[2], child.Id.ToString());
+                using (var child = Process.Start(Self("--worker", "sleep"))!) PublishMarker(args[2], child.Id.ToString());
                 return 0;
             case "sleep": Thread.Sleep(Timeout.Infinite); break;
             case "ready-log":
@@ -172,7 +172,7 @@ if (args.Length > 0 && args[0] != "--report")
     {
         using var native = new NativeProcess(Worker("--worker spawn " + LaunchCommand.Quote(args[1])));
         while (!File.Exists(args[1])) await Task.Delay(50);
-        File.WriteAllText(args[1] + ".owner", Environment.ProcessId.ToString());
+        PublishMarker(args[1] + ".owner", Environment.ProcessId.ToString());
         Thread.Sleep(Timeout.Infinite); return 0;
     }
 }
@@ -842,11 +842,15 @@ await Test("Process tree stop, restart, repeated launches", async () =>
 });
 await Test("Root exit preserves tracked child until stop", async () =>
 {
-    var marker = Path.Combine(root, "detached.txt"); var item = Worker("--worker detach " + LaunchCommand.Quote(marker));
-    await using var manager = new ProcessManager(new() { Items = [item] }, root, Signal);
-    await manager.StartAsync(item.Id); await Until(() => File.Exists(marker)); var pid = int.Parse(File.ReadAllText(marker));
-    await Task.Delay(200); Assert(Alive(pid) && manager.Snapshot(item.Id).Active, "child remains tracked");
-    await manager.StopAsync(item.Id).WaitAsync(TimeSpan.FromSeconds(8)); await Until(() => !Alive(pid));
+    for (var iteration = 0; iteration < 3; iteration++)
+    {
+        var marker = Path.Combine(root, "detached-" + iteration + ".txt"); var item = Worker("--worker detach " + LaunchCommand.Quote(marker));
+        await using var manager = new ProcessManager(new() { Items = [item] }, root, Signal);
+        await manager.StartAsync(item.Id); await Until(() => File.Exists(marker)); var pid = int.Parse(File.ReadAllText(marker));
+        Assert(Directory.GetFiles(root, Path.GetFileName(marker) + ".*.tmp").Length == 0, "marker published after closing temporary file");
+        await Task.Delay(200); Assert(Alive(pid) && manager.Snapshot(item.Id).Active, "child remains tracked");
+        await manager.StopAsync(item.Id).WaitAsync(TimeSpan.FromSeconds(8)); await Until(() => !Alive(pid));
+    }
 });
 await Test("Owner forced termination kills root and grandchild", async () =>
 {

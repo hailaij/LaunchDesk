@@ -4,6 +4,10 @@ using System.Text.Json;
 using LaunchDesk.Core;
 
 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+if (args is ["--log-benchmark", var benchmarkReport])
+{
+    await LogBenchmarks.Run(benchmarkReport); return 0;
+}
 var self = Environment.ProcessPath!;
 ProcessStartInfo Self(params string[] args)
 {
@@ -90,6 +94,7 @@ if (args.Length > 0 && args[0] != "--report")
                 while (!File.Exists(args[2])) await Task.Delay(20);
                 Console.Write("READY"); Console.Out.Flush(); await Task.Delay(Timeout.Infinite); break;
             case "args": Console.Write(JsonSerializer.Serialize(args.Skip(2).ToArray())); return 0;
+            case "flood-stop":
             case "flood":
                 using (var output = Console.OpenStandardOutput())
                 using (var error = Console.OpenStandardError())
@@ -102,6 +107,7 @@ if (args.Length > 0 && args[0] != "--report")
                     foreach (var value in Encoding.UTF8.GetBytes("尾部🙂无换行")) output.WriteByte(value);
                     error.Write(Encoding.UTF8.GetBytes("stderr-tail"));
                 }
+                if (args[1] == "flood-stop") _ = Console.ReadLine();
                 return 0;
             case "input": Console.Write("READY"); Console.Out.Flush(); var input = Console.ReadLine(); Console.Write("GOT:" + input); return 0;
             case "stop-prompt":
@@ -197,10 +203,23 @@ await Test("Incremental log cursors handle retention clear and concurrent writes
     await Task.Run(() => Parallel.For(0, 3100, i => log.Write("stdout", $"record-{i}\n")));
     var overflow = log.ReadSince(next.Cursor);
     Assert(overflow.Reset && overflow.Records.Length == 3000, "missed retention requires reset");
+    for (var i = 0; i < 7000; i++)
+    {
+        log.Write("stdout", $"wrapped-{i}\n");
+        var delta = log.ReadSince(overflow.Cursor + i);
+        Assert(!delta.Reset && delta.Records.Length == 1 && delta.Records[0].Text == $"wrapped-{i}\n", "indexed ring wrap delta");
+    }
+    Assert(log.Snapshot().First().Text == "wrapped-4000\n" && log.Snapshot().Last().Text == "wrapped-6999\n", "ring retained order");
+    overflow = log.ReadSince(-1);
     log.ClearPanel(); var cleared = log.ReadSince(overflow.Cursor);
     Assert(cleared.Reset && cleared.Records.Length == 0, "clear is visible even without new records");
     log.Write("stdout", "after-clear");
     Assert(log.ReadSince(cleared.Cursor).Records.Single().Text == "after-clear", "resume after clear");
+    var filesBefore = Directory.GetFiles(log.DirectoryPath, "*.jsonl").Length;
+    typeof(LogStore).GetField("currentDate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+        .SetValue(log, DateTime.Today.AddDays(-1));
+    log.Write("stdout", "next-day");
+    Assert(Directory.GetFiles(log.DirectoryPath, "*.jsonl").Length == filesBefore + 1, "cached previous day rotates file");
 });
 await Test("Incremental log projection reuses records and matches merged snapshots", () =>
 {
@@ -244,6 +263,9 @@ await Test("Windows legacy output encoding and UTF-8 chunk boundaries", async ()
         var incremental = new OutputDecoder("auto", gbk);
         var result = string.Concat(bytes.Select(b => incremental.Decode(new[] { b }))) + incremental.Decode([], true);
         Assert(result == text, "byte-by-byte decoding");
+        var explicitDecoder = new OutputDecoder(encoding.CodePage == 65001 ? "utf-8" : "gbk", gbk);
+        var explicitResult = string.Concat(bytes.Select(b => explicitDecoder.Decode(new[] { b }))) + explicitDecoder.Decode([], true);
+        Assert(explicitResult == text && explicitDecoder.Decode([], true) == "", "pooled explicit decoder tail and repeat flush");
     }
     var incomplete = new OutputDecoder("auto", gbk);
     Assert(incomplete.Decode(new byte[] { 0xE4 }) == "", "partial UTF-8 buffered");
@@ -660,6 +682,16 @@ await Test("Dual-stream flood, split UTF-8, unterminated tail, export", async ()
     Assert(File.ReadAllText(export) == expectedExport, "export preserves every record, including split tail");
     manager.Logs(item.Id).ClearPanel(); Assert(manager.Logs(item.Id).Snapshot().Length == 0, "clear panel");
     Assert(Directory.GetFiles(manager.Logs(item.Id).DirectoryPath).Length > 0, "clear retains disk history");
+    var stopping = Worker("--worker flood-stop"); stopping.StopInput = "exit"; stopping.StopTimeoutSeconds = 15;
+    await using var stopManager = new ProcessManager(new() { Items = [stopping] }, root, Signal);
+    await stopManager.StartAsync(stopping.Id);
+    await stopManager.StopAsync(stopping.Id);
+    var stoppedRecords = Directory.GetFiles(stopManager.Logs(stopping.Id).DirectoryPath, "*.jsonl").Order()
+        .SelectMany(ReadLog).Select(x => JsonSerializer.Deserialize<LogRecord>(x)!).ToArray();
+    Assert(stopManager.Snapshot(stopping.Id).ExitCode == 0, "stop while producing output exits gracefully");
+    Assert(string.Concat(stoppedRecords.Where(x => x.Channel == "stdout").Select(x => x.Text)) == expectedOut.ToString(), "stop drains stdout and decoder tail");
+    Assert(string.Concat(stoppedRecords.Where(x => x.Channel == "stderr").Select(x => x.Text)) == expectedErr.ToString(), "stop drains stderr");
+    Assert(stoppedRecords.Where(x => x.Channel == "stdout").SelectMany(x => x.RawBytes ?? []).SequenceEqual(Encoding.UTF8.GetBytes(expectedOut.ToString())), "stop retains raw bytes");
 });
 await Test("Stop input delay and notes compatibility, validation, roundtrip", () =>
 {

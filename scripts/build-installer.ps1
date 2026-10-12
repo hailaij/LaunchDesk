@@ -5,22 +5,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
-if (-not $CompilerPath) {
-    $candidates = @(
-        (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
-        (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
-        (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe')
-    )
-    $CompilerPath = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
-    if (-not $CompilerPath) {
-        $command = Get-Command ISCC.exe -CommandType Application -ErrorAction SilentlyContinue
-        if ($command) { $CompilerPath = $command.Source }
-    }
-}
-if (-not $CompilerPath -or -not (Test-Path -LiteralPath $CompilerPath -PathType Leaf)) {
-    throw 'Inno Setup 6 is required. Install it from https://jrsoftware.org/isdl.php or supply -CompilerPath.'
-}
-$CompilerPath = (Resolve-Path -LiteralPath $CompilerPath).Path
+$CompilerPath = & (Join-Path $PSScriptRoot 'Resolve-InnoCompiler.ps1') -CompilerPath $CompilerPath
 $version = ([xml](Get-Content -LiteralPath (Join-Path $projectRoot 'Directory.Build.props') -Raw)).Project.PropertyGroup.Version
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Installer requires a numeric major.minor.patch version.' }
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory, $projectRoot)

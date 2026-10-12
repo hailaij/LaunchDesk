@@ -17,6 +17,10 @@ try {
     dotnet run --project tests/LaunchDesk.Tests -c Release --no-build -- --report (Join-Path $output 'test-results.json') --fail-on-skip
     if ($LASTEXITCODE -ne 0) { throw 'Core integration tests failed or skipped' }
     & (Join-Path $PSScriptRoot 'Assert-TestReport.ps1') -Path (Join-Path $output 'test-results.json') -RequireNoSkips
+    dotnet run --project tests/LaunchDesk.Tests -c Release --no-build -- --log-benchmark (Join-Path $output 'log-backend.json')
+    if ($LASTEXITCODE -ne 0) { throw 'Log backend benchmark failed' }
+    & (Join-Path $PSScriptRoot 'Assert-LogBackendPerformance.ps1') -Path (Join-Path $output 'log-backend.json')
+    & (Join-Path $PSScriptRoot 'Verify-InnoCompiler.ps1') -OutputDirectory (Join-Path $output 'compiler-path')
     & (Join-Path $PSScriptRoot 'Verify-Documentation.ps1') -OutputDirectory (Join-Path $output 'documentation')
     Write-Host 'CI verification: running engineering contracts'
     & (Join-Path $PSScriptRoot 'Verify-Engineering.ps1') -OutputDirectory (Join-Path $output 'engineering-contracts')

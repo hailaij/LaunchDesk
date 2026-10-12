@@ -30,10 +30,11 @@ foreach ($mode in @('--ui-smoke', '--ui-smoke-en-min')) {
     & (Join-Path $PSScriptRoot 'Assert-LogPerformance.ps1') -ScreenshotPath $path
 }
 & (Join-Path $PSScriptRoot 'Verify-LogPerformanceContracts.ps1') -ScreenshotPath (Join-Path $output 'ui-smoke.png') -OutputDirectory (Join-Path $output 'performance-contracts')
-foreach ($mode in @('--timer', '--loaded', '--control', '--recovery-accept', '--recovery-accept-en', '--recovery-skip', '--accessibility', '--accessibility-en', '--service-diagnostics')) {
+foreach ($mode in @('--timer', '--loaded', '--control', '--recovery-accept', '--recovery-accept-en', '--recovery-skip', '--recovery-empty', '--accessibility', '--accessibility-en', '--service-diagnostics')) {
     dotnet run --project tests/LaunchDesk.UiChecks -c Release --no-build -- $mode (Join-Path $output ($mode.TrimStart('-') + '.json'))
     if ($LASTEXITCODE -ne 0) { throw "UI host failed: $mode" }
     $result = Get-Content -LiteralPath (Join-Path $output ($mode.TrimStart('-') + '.json')) -Raw | ConvertFrom-Json
+    if ($mode -eq '--recovery-empty' -and -not $result.passed) { throw 'Empty recovery selection verification failed' }
     if ($mode -eq '--service-diagnostics' -and (-not $result.passed -or -not $result.cleanExit)) { throw 'Service diagnostics verification failed' }
     if ($mode.StartsWith('--accessibility') -and (-not $result.passed -or -not $result.cleanExit)) { throw "Accessibility verification failed: $mode" }
     if ($mode -in @('--timer', '--loaded') -and -not $result.diagnosticsWritten) { throw "Missing UI diagnostics: $mode" }

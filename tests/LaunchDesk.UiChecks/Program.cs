@@ -15,7 +15,7 @@ internal static class UiChecks
         { var sent = NativeProcess.SendControlSignal(pid, out var detail); if (!sent) Console.Error.WriteLine(detail); Thread.Sleep(100); return sent ? 0 : 1; }
         if (args.Length == 2 && args[0] is "--ui-fault-loaded" or "--ui-fault-dispatcher" or "--ui-smoke" or "--ui-smoke-min" or "--ui-smoke-en" or "--ui-smoke-en-min")
             return FaultProbe.Run(args[0], Path.GetFullPath(args[1]));
-        if (args.Length != 2 || args[0] is not ("--timer" or "--loaded" or "--control" or "--recovery-accept" or "--recovery-accept-en" or "--recovery-skip" or "--accessibility" or "--accessibility-en" or "--service-diagnostics")) return 2;
+        if (args.Length != 2 || args[0] is not ("--timer" or "--loaded" or "--control" or "--recovery-accept" or "--recovery-accept-en" or "--recovery-skip" or "--recovery-empty" or "--accessibility" or "--accessibility-en" or "--service-diagnostics")) return 2;
         var report = Path.GetFullPath(args[1]); Directory.CreateDirectory(Path.GetDirectoryName(report)!);
         var root = Path.Combine(Path.GetTempPath(), "LaunchDesk-ui-check-" + Guid.NewGuid().ToString("N"));
         var store = new ConfigurationStore(root);
@@ -42,6 +42,35 @@ internal static class UiChecks
             }
         }
         var app = new App(); app.InitializeComponent();
+        if (args[0] == "--recovery-empty")
+        {
+            var failures = new List<string>();
+            var dialog = new RecoveryDialog([new() { Name = "isolated" }], 0);
+            dialog.Loaded += (_, _) =>
+            {
+                var choices = (Dictionary<Guid, System.Windows.Controls.CheckBox>)typeof(RecoveryDialog)
+                    .GetField("choices", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(dialog)!;
+                var grid = (System.Windows.Controls.Grid)((System.Windows.Controls.Border)dialog.Content).Child;
+                var buttons = grid.Children.OfType<System.Windows.Controls.StackPanel>().Single();
+                var restore = buttons.Children.OfType<System.Windows.Controls.Button>().Last();
+                if (!restore.IsEnabled) failures.Add("Initial selection disabled");
+                choices.Values.Single().IsChecked = false;
+                if (restore.IsEnabled || dialog.SelectedIds.Length != 0) failures.Add("Empty selection still enabled");
+                choices.Values.Single().IsChecked = true;
+                if (!restore.IsEnabled || dialog.SelectedIds.Length != 1) failures.Add("Re-selection disabled");
+                var empty = new RecoveryDialog([], 1);
+                empty.Show();
+                var emptyGrid = (System.Windows.Controls.Grid)((System.Windows.Controls.Border)empty.Content).Child;
+                var emptyButtons = emptyGrid.Children.OfType<System.Windows.Controls.StackPanel>().Single();
+                if (emptyButtons.Children.OfType<System.Windows.Controls.Button>().Last().IsEnabled)
+                    failures.Add("No candidates still enabled");
+                empty.Close();
+                dialog.Close(); app.Shutdown(failures.Count == 0 ? 0 : 1);
+            };
+            app.Run(dialog);
+            File.WriteAllText(report, JsonSerializer.Serialize(new { passed = failures.Count == 0, failures }));
+            return failures.Count == 0 ? 0 : 1;
+        }
         var iconFont = (System.Windows.Media.FontFamily)app.Resources["IconFont"];
         if (iconFont.Source != "Segoe MDL2 Assets" || !new System.Windows.Media.Typeface(iconFont, System.Windows.FontStyles.Normal,
             System.Windows.FontWeights.Normal, System.Windows.FontStretches.Normal).TryGetGlyphTypeface(out var glyphs)) return 1;

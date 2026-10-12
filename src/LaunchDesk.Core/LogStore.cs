@@ -11,13 +11,14 @@ public sealed partial class LogStore : IDisposable
     private readonly object gate = new();
     private readonly object diskGate = new();
     private readonly Queue<string> cleanupWarnings = new();
-    private readonly Queue<LogRecord> memory = new();
+    private readonly RecordBuffer memory = new();
     private readonly Queue<long> cursors = new();
     private long cursor;
     private long resetCursor;
     private readonly Preferences preferences;
     private StreamWriter? writer;
     private string? currentFile;
+    private DateTime currentDate;
     private long bytes;
     private int characters;
     private int revision;
@@ -40,12 +41,13 @@ public sealed partial class LogStore : IDisposable
             var record = new LogRecord(DateTimeOffset.Now, channel, text, rawBytes);
             var serialized = JsonSerializer.Serialize(record);
             if (writer is null || bytes > Math.Min(10 * 1024 * 1024L, preferences.LogLimitMiB * 1024 * 1024L / 2)
-                || File.GetLastWriteTime(currentFile!).Date != DateTime.Today)
+                || currentDate != record.Time.Date)
             {
                 writer?.Dispose(); writer = null;
                 Directory.CreateDirectory(DirectoryPath); Cleanup();
                 currentFile = Path.Combine(DirectoryPath, DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fffffff") + ".jsonl");
                 writer = new StreamWriter(new FileStream(currentFile, FileMode.CreateNew, FileAccess.Write, FileShare.Read), new UTF8Encoding(false));
+                currentDate = record.Time.Date;
                 bytes = 0;
             }
             // Disk is the source of truth; a failed write must propagate to the supervisor.
@@ -99,7 +101,7 @@ public sealed partial class LogStore : IDisposable
             var reset = after < resetCursor || after > cursor || after < first - 1;
             if (after == cursor) return new(cursor, first, false, []);
             var skip = reset ? 0 : (int)Math.Clamp(after - first + 1, 0, memory.Count);
-            return new(cursor, first, reset, memory.Skip(skip).ToArray());
+            return new(cursor, first, reset, memory.ToArray(skip));
         }
     }
     public void ClearPanel() { lock (gate) { memory.Clear(); cursors.Clear(); resetCursor = ++cursor; characters = 0; recentLoaded = true; revision++; Interlocked.Exchange(ref changeStamp, Interlocked.Increment(ref sequence)); } }
@@ -287,5 +289,29 @@ public sealed partial class LogStore : IDisposable
             try { writer?.Dispose(); }
             finally { writer = null; lock (gate) { memory.Clear(); cursors.Clear(); resetCursor = ++cursor; characters = 0; } }
         }
+    }
+    // Retention is bounded; indexed copies cost only the requested delta, not the retained prefix.
+    private sealed class RecordBuffer
+    {
+        private readonly LogRecord?[] records = new LogRecord[3001];
+        private int head;
+        public int Count { get; private set; }
+        public void Enqueue(LogRecord record)
+        {
+            if (Count == records.Length) throw new InvalidOperationException("Log retention buffer overflow");
+            records[(head + Count++) % records.Length] = record;
+        }
+        public LogRecord Dequeue()
+        {
+            var record = records[head]!; records[head] = null;
+            head = (head + 1) % records.Length; Count--; return record;
+        }
+        public LogRecord[] ToArray(int skip = 0)
+        {
+            var result = new LogRecord[Count - skip];
+            for (var i = 0; i < result.Length; i++) result[i] = records[(head + skip + i) % records.Length]!;
+            return result;
+        }
+        public void Clear() { Array.Clear(records); head = 0; Count = 0; }
     }
 }

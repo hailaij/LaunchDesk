@@ -34,7 +34,13 @@ public sealed class RecoveryDialog : Window
         var skip = new Button { Content = T("不恢复"), MinWidth = 90, IsCancel = true }; skip.Click += (_, _) => DialogResult = false;
         var restore = new Button { Content = T("恢复所选"), MinWidth = 100, IsEnabled = items.Length > 0,
             Style = (Style)Application.Current.FindResource("PrimaryButton") };
-        restore.Click += (_, _) => DialogResult = true;
+        foreach (var box in choices.Values)
+        {
+            box.Checked += (_, _) => restore.IsEnabled = SelectedIds.Length > 0;
+            box.Unchecked += (_, _) => restore.IsEnabled = SelectedIds.Length > 0;
+            box.Indeterminate += (_, _) => restore.IsEnabled = SelectedIds.Length > 0;
+        }
+        restore.Click += (_, _) => { if (SelectedIds.Length > 0) DialogResult = true; };
         buttons.Children.Add(skip); buttons.Children.Add(restore); Grid.SetRow(buttons, 2); grid.Children.Add(buttons);
         var surface = new Border { Child = grid }; surface.SetResourceReference(Border.BackgroundProperty, "Canvas"); Content = surface;
     }

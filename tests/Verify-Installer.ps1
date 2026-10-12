@@ -2,11 +2,12 @@ param(
     [Parameter(Mandatory)][string]$SetupPath,
     [Parameter(Mandatory)][string]$PublishDirectory,
     [Parameter(Mandatory)][string]$PreviousPublishDirectory,
-    [string]$CompilerPath = 'D:\tool\Inno Setup 6\ISCC.exe',
+    [string]$CompilerPath,
     [string]$OutputDirectory = 'artifacts/verification/installer',
     [ValidateSet('english','chinesesimplified')][string]$Language = 'english'
 )
 $ErrorActionPreference = 'Stop'
+$CompilerPath = & (Join-Path $PSScriptRoot '../scripts/Resolve-InnoCompiler.ps1') -CompilerPath $CompilerPath
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 $sandbox = Join-Path $output ('sandbox-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $sandbox -Force | Out-Null

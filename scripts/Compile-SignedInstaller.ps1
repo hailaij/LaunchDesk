@@ -11,11 +11,7 @@ $publish = (Resolve-Path -LiteralPath $PublishDirectory).Path
 $signing = [IO.Path]::GetFullPath($SigningDirectory)
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 $version = ([xml](Get-Content -LiteralPath (Join-Path $project 'Directory.Build.props') -Raw)).Project.PropertyGroup.Version
-if (-not $CompilerPath) {
-    $CompilerPath = @((Join-Path $env:LOCALAPPDATA 'Programs/Inno Setup 6/ISCC.exe'), (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'), (Join-Path $env:ProgramFiles 'Inno Setup 6/ISCC.exe')) |
-        Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-}
-if (-not (Test-Path -LiteralPath $CompilerPath)) { throw 'Inno compiler missing' }
+$CompilerPath = & (Join-Path $PSScriptRoot 'Resolve-InnoCompiler.ps1') -CompilerPath $CompilerPath
 if ($PrepareUninstaller) {
     if ((Test-Path -LiteralPath $signing) -and @(Get-ChildItem -LiteralPath $signing -Force).Count) { throw 'Use a fresh, empty uninstaller signing directory' }
     New-Item -ItemType Directory -Path $signing -Force | Out-Null

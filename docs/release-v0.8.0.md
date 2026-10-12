@@ -16,6 +16,9 @@ Date: 2026-10-12. Unsigned prerelease; manual installation only.
 3. **P2: native identity handles.** 200 local pipe-name queries increased the
    process handle count by 200 before repair. Identity/process objects now use
    deterministic disposal; a repeated-query regression guards handle growth.
+4. **P2: form accessibility names.** CI exposed an input whose label automation
+   peer was not realized. Form text inputs now bind their explicit automation name
+   to the visible label; regression checks require this independent name.
 
 Reviewed health/readiness lifetimes, CLI IPC/session journals, elevated helper
 ownership, independent service paths, installer/signing inventories, accessibility

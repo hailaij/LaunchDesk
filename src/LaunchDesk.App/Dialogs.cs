@@ -20,7 +20,14 @@ internal static class FormLayout
         grid.Children.Add(new TextBlock { Text = label, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 9, 10, 0) });
         void Label(UIElement element)
         {
-            if (element is Control) System.Windows.Automation.AutomationProperties.SetLabeledBy(element, (TextBlock)grid.Children[0]);
+            if (element is Control)
+            {
+                var heading = (TextBlock)grid.Children[0];
+                System.Windows.Automation.AutomationProperties.SetLabeledBy(element, heading);
+                if (element is TextBox input)
+                    input.SetBinding(System.Windows.Automation.AutomationProperties.NameProperty,
+                        new System.Windows.Data.Binding("Text") { Source = heading });
+            }
             if (element is Panel children) foreach (UIElement child in children.Children) Label(child);
         }
         Label(control);

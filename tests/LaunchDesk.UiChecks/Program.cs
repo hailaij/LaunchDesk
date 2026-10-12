@@ -70,6 +70,10 @@ internal static class UiChecks
                     }
                     void Named(System.Windows.Controls.Control control)
                     {
+                        if (control is System.Windows.Controls.TextBox &&
+                            System.Windows.Automation.AutomationProperties.GetLabeledBy(control) is not null &&
+                            string.IsNullOrWhiteSpace(System.Windows.Automation.AutomationProperties.GetName(control)))
+                            throw new InvalidDataException("Form input must expose a name independently of label peer realization.");
                         var peer = System.Windows.Automation.Peers.UIElementAutomationPeer.CreatePeerForElement(control);
                         if (string.IsNullOrWhiteSpace(peer?.GetName()) || peer.GetName().Any(c => c is >= '\uE000' and <= '\uF8FF'))
                             throw new InvalidDataException("Unnamed/icon-only automation control: " + control.GetType().Name + " name=" + control.Name + " tooltip=" + control.ToolTip + " content=" + (control as System.Windows.Controls.ContentControl)?.Content + " peer=" + peer?.GetName());

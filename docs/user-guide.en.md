@@ -12,7 +12,7 @@ Output encoding: new items default to `auto`. Each output pipe starts with UTF-8
 
 Windows 10/11 x64 launch manager. Run `LaunchDesk.exe`; the self-contained application includes its runtime.
 
-v0.8.0 is an unsigned prerelease for manual installation only. SHA-256 checks integrity, not publisher identity. Exit the previous tray instance and back up data before upgrading.
+v0.8.1 is an unsigned prerelease for manual installation only. SHA-256 checks integrity, not publisher identity. Exit the previous tray instance and back up data before upgrading.
 
 New in v0.8.0: CLI and crash recovery. Open the desktop app first; use the adjacent `LaunchDesk.Cli.exe list`, `status --json`, `start "name"`, `stop "name"`, or `restart "name"`. `start --all` / `stop --all` control all items. Use an item GUID when names are duplicated. The CLI controls the existing instance, without bypassing UAC or providing remote access. Configured per-item elevation still requires user consent. Exit codes: 0 success, 1 operation failed, 2 invalid arguments, 3 connection failed, 4 timeout; query status after a timeout.
 
@@ -50,7 +50,7 @@ Readiness defaults to off. Optional TCP, HTTP and current-run log keyword checks
 
 Optional TCP/HTTP health monitoring starts after readiness and can reuse a network readiness endpoint or use a separate address. Defaults: 30 seconds after each probe, 5-second timeout, 3 consecutive failures and 2 consecutive successes to recover. Health, check time and failure details appear in the status column, tooltip and status bar. Stop cancels monitoring.
 
-Health-triggered restart is independently off by default. It affects only the current item, respects the existing stop-input/timeout flow, and does not stop/restart dependents. Defaults: 60-second cooldown and at most 3 restarts per rolling 10 minutes; configurable. Rate-limited failures retain the running process and show the reason. Persistent failures can restart after limits expire. User stop is never undone. This feature is not in the published v0.8.0 binaries. Use lightweight, side-effect-free endpoints; monitoring repeatedly contacts the configured address.
+Health-triggered restart is independently off by default. It affects only the current item, respects the existing stop-input/timeout flow, and does not stop/restart dependents. Defaults: 60-second cooldown and at most 3 restarts per rolling 10 minutes; configurable. Rate-limited failures retain the running process and show the reason. Persistent failures can restart after limits expire. User stop is never undone. Use lightweight, side-effect-free endpoints; monitoring repeatedly contacts the configured address.
 
 Default data: `%LOCALAPPDATA%\LaunchDesk`. Configuration: `config.json`; automatic backups: `backups/` (20 retained); manual snapshots: `backups/manual/` (not automatically pruned); logs: `logs/<item ID>/`. Manual snapshots contain configuration, not scripts or logs.
 

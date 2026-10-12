@@ -2,15 +2,21 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-Windows 启动项管理器。当前版本 **v0.8.0**（未签名预发布，0.x 开发阶段），支持中英文界面。
+Windows 启动项管理器。当前版本 **v0.8.1**（未签名预发布，0.x 开发阶段），支持中英文界面。
 
 **发布状态：**本版本为未签名预发布，仅供手动下载和安装。可信更新流水线在缺少正式签名配置时仍会阻断发布；测试证书不会用于生产信任。见 [可信度与工程化验收](docs/trust-and-engineering.md)。
 
 ![LaunchDesk](docs/images/main.png)
 
-[当前版本界面截图](docs/screenshots.md)（v0.8.0；隔离示例数据，不是首次安装配置）。
+[当前版本界面截图](docs/screenshots.md)（v0.8.1；隔离示例数据，不是首次安装配置）。
 
 ## 功能
+
+### v0.8.1 修复与优化
+
+- 修复管理器切换、服务诊断与 CLI JSON 输出；生产包不再包含故障注入入口。
+- 优化日志批量写入、解码与增量读取；超长显示保留来源前缀、截断标记及 Unicode 边界，不改变原始日志和导出。
+- 补齐恢复空选择、编译器路径、独立测试超时清理，以及中英文资源键、1000 项配置和 200 MiB 日志门禁。详见 [本版验证](docs/release-v0.8.1.md)。
 
 ### v0.8.0 新增与修复
 
@@ -78,7 +84,7 @@ Windows 启动项管理器。当前版本 **v0.8.0**（未签名预发布，0.x 
 
 面向 Windows 10/11 x64。自包含发布包自带 .NET 运行时，解压后运行 `LaunchDesk.exe`，请保留整个目录。
 
-从 [GitHub Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.8.0) 手动下载 `LaunchDesk-v0.8.0-win-x64-setup.exe` 安装程序，或 `LaunchDesk-v0.8.0-win-x64.zip` 免安装包。各文件附带 `.sha256` 校验文件。本版本为未签名预发布，仅手动安装，不提供可信应用内更新。哈希不替代发行者签名。
+从 [GitHub Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.8.1) 手动下载 `LaunchDesk-v0.8.1-win-x64-setup.exe` 安装程序，或 `LaunchDesk-v0.8.1-win-x64.zip` 免安装包。各文件附带 `.sha256` 校验文件。本版本为未签名预发布，仅手动安装，不提供可信应用内更新。哈希不替代发行者签名。
 
 在设置的“外观”中选择浅色、深色或跟随系统，保存后立即生效。旧版本配置无需手动迁移，未指定主题时默认跟随系统。升级时请先从托盘退出旧版本，再解压到新目录运行；便携模式用户需将原目录的 `portable.flag` 和 `data\` 复制到新版本目录，原数据保留备份。
 
@@ -149,7 +155,7 @@ BAT 未指定工作目录时，默认使用 BAT 所在目录。命令类型按 c
 ./scripts/build-installer.ps1 -CompilerPath 'D:\tool\Inno Setup 6\ISCC.exe'
 ```
 
-输出为 `artifacts/installers/LaunchDesk-v0.8.0-win-x64-setup.exe` 及 SHA-256 校验文件。本版验证相同脚本和发布文件的隔离首次安装、升级数据保留及卸载；测试仅覆盖独立安装身份，不覆盖正在使用的正式安装。Windows 10 实机及真实服务验收暂缓，详见本版 Release 的验证范围。
+输出为 `artifacts/installers/LaunchDesk-v0.8.1-win-x64-setup.exe` 及 SHA-256 校验文件。本版验证相同脚本和发布文件的隔离首次安装、升级数据保留及卸载；测试仅覆盖独立安装身份，不覆盖正在使用的正式安装。Windows 10 实机及真实服务验收暂缓，详见本版 Release 的验证范围。
 
 默认安装到 `%LOCALAPPDATA%\Programs\LaunchDesk`，仅当前用户，无需管理员权限；创建开始菜单快捷方式，可选桌面快捷方式。完成后默认不启动应用，避免自动执行已配置服务。更新或卸载前请先从托盘退出实例；旧版便携程序需手动退出。卸载保留配置、日志、备份和便携数据，仅移除属于此安装路径的登录自启命令。安装器支持简体中文与英文，应用支持中英文切换。独立服务的注册、运行文件和数据不会随桌面卸载移除，应先在服务管理中卸载服务。未配置代码签名证书，生成的安装器不会带发行者签名。
 
@@ -175,7 +181,7 @@ tests/LaunchDesk.UiChecks/bin/Release/net10.0-windows/LaunchDesk.UiChecks.exe --
 
 独立测试宿主的 `--ui-smoke` 使用隔离数据目录，截图中的启动项不会执行。生产程序拒绝全部 `--ui-*` 测试参数。GitHub Actions 还会验证签名样本、双语截图像素、虚拟化、异常恢复与进程清理，并上传报告及来源元数据，详见 [测试证据与故障隔离](docs/test-evidence-and-fault-isolation.md)。
 
-当前源码主测试清单为 107 组，每组在独立受管宿主内执行，120 秒超时后清理整个进程树；无签名样本时 3 组明确跳过。CI 的 `--fail-on-skip` 拒绝任何跳过，历史报告见 [测试证据](docs/test-summary.md)。开发电脑可运行 `./tests/Verify-Ui.ps1` 和 `./tests/Verify-Engineering.ps1`；CI 自签证书脚本仅允许临时 GitHub-hosted runner。新增中英文 XAML 资源键门禁、1000 项配置与 200 MiB 日志验证，命令及持续运行边界见 [测试隔离与规模验证](docs/scale-and-test-gates.md)。已发布 v0.8.0 的 104 组验证及资产验收见 Release 和 [本版复查](docs/release-v0.8.0.md)，后续未发布修复见 [管理器、服务诊断与 CLI JSON 复现](docs/v0.8-review-manager-service-cli.md)及[日志显示边界](docs/log-projection-boundary.md)。重复打包须使用新的输出目录，非空发布目录会被拒绝。
+当前源码主测试清单为 107 组，每组在独立受管宿主内执行，120 秒超时后清理整个进程树；无签名样本时 3 组明确跳过。CI 的 `--fail-on-skip` 拒绝任何跳过，历史报告见 [测试证据](docs/test-summary.md)。开发电脑可运行 `./tests/Verify-Ui.ps1` 和 `./tests/Verify-Engineering.ps1`；CI 自签证书脚本仅允许临时 GitHub-hosted runner。新增中英文 XAML 资源键门禁、1000 项配置与 200 MiB 日志验证，命令及持续运行边界见 [测试隔离与规模验证](docs/scale-and-test-gates.md)。已发布 v0.8.0 的 104 组验证及资产验收见 Release 和 [本版复查](docs/release-v0.8.0.md)，v0.8.1 收录的后续修复见 [管理器、服务诊断与 CLI JSON 复现](docs/v0.8-review-manager-service-cli.md)及[日志显示边界](docs/log-projection-boundary.md)。重复打包须使用新的输出目录，非空发布目录会被拒绝。
 
 ## 贡献
 
@@ -188,6 +194,22 @@ LaunchDesk 使用 [MIT](LICENSE) 许可证。Windows/.NET 运行时按各自条�
 隐私与联网说明见 [隐私政策 / Privacy Policy](PRIVACY.md)。
 
 ## 更新日志
+
+### [0.8.1] - 2026-10-12
+
+#### 修复
+
+- 管理器切换失败回退、服务诊断隔离及 CLI JSON 契约；生产故障注入移至测试宿主。
+- 恢复窗口空选择和安装器编译器路径；超长日志保留来源前缀、截断标记及中文/emoji 边界。
+
+#### 优化
+
+- 日志批量写入、复用解码缓冲区、索引增量读取，保持停止排空与原始日志完整。
+- 107 组独立受管测试，增加超时进程树清理、中英文资源键、1000 项与 200 MiB 日志门禁及报告源码哈希。
+
+#### 限制
+
+- 未签名、仅手动安装，缺少生产发行者授权时可信发布仍阻断。1 小时耐久、Win10 实机及真实服务验收暂缓。
 
 ### [0.8.0] - 2026-10-12
 

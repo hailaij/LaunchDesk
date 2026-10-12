@@ -1,7 +1,7 @@
 # Test isolation and scale / 测试隔离与规模验证
 
-Unreleased changes. Production signing configuration and user service data are unchanged.
-未发布改动，不改变生产签名配置及用户真实服务数据。
+Included in v0.8.1. Production signing configuration and user service data are unchanged.
+v0.8.1 收录的改动，不改变生产签名配置及用户真实服务数据。
 
 ## Independent Deadlines / 独立超时
 

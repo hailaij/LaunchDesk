@@ -2,15 +2,21 @@
 
 [Simplified Chinese](README.md) | [English](README.en.md)
 
-A Windows desktop manager for scripts, commands and applications, with real-time logs. Current version: **v0.8.0** (unsigned prerelease, early development).
+A Windows desktop manager for scripts, commands and applications, with real-time logs. Current version: **v0.8.1** (unsigned prerelease, early development).
 
 **Release status:** This is an unsigned prerelease for manual download and installation only. Missing production signing configuration still blocks the trusted update pipeline. Test certificates never enter production trust. See [Trust and engineering verification](docs/trust-and-engineering.md).
 
 ![LaunchDesk](docs/images/main-en.png)
 
-[Current screenshots](docs/screenshots.md) (v0.8.0; isolated fixture data, not first-install configuration).
+[Current screenshots](docs/screenshots.md) (v0.8.1; isolated fixture data, not first-install configuration).
 
 ## Features
+
+### Fixed and Improved in v0.8.1
+
+- Manager switching, isolated service diagnostics and CLI JSON contracts; production packages exclude fault-injection entry points.
+- Batched log writes, reusable decoding buffers and indexed incremental reads; long display lines preserve source prefixes, truncation markers and Unicode boundaries without changing raw logs or export.
+- Empty recovery selections, compiler resolution, independent test deadlines, bilingual resource keys, 1,000 configurations and 200 MiB log gates. See [release verification](docs/release-v0.8.1.md).
 
 ### New and Fixed in v0.8.0
 
@@ -82,7 +88,7 @@ A Windows desktop manager for scripts, commands and applications, with real-time
 
 Windows 10/11 x64. Self-contained packages include the .NET runtime. Keep the entire extracted directory and launch `LaunchDesk.exe`.
 
-Manually download `LaunchDesk-v0.8.0-win-x64-setup.exe` or the portable `LaunchDesk-v0.8.0-win-x64.zip` from [Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.8.0). SHA-256 sidecar files are provided. This unsigned prerelease requires manual installation and is not a trusted in-app update. Hashes do not replace publisher signatures.
+Manually download `LaunchDesk-v0.8.1-win-x64-setup.exe` or the portable `LaunchDesk-v0.8.1-win-x64.zip` from [Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.8.1). SHA-256 sidecar files are provided. This unsigned prerelease requires manual installation and is not a trusted in-app update. Hashes do not replace publisher signatures.
 
 First launch is empty. No local services are preconfigured or executed. Closing the window hides it to the tray. Use **Exit** in the tray menu to stop all managed processes and drain logs before upgrading. Single-instance activation may restore an already running older copy; window titles show the actual assembly version, and cross-version/path launches show a warning.
 
@@ -146,13 +152,13 @@ dotnet run --project tests/LaunchDesk.Tests -c Release -- --report artifacts/tes
 ./scripts/build-installer.ps1 -CompilerPath 'D:\tool\Inno Setup 6\ISCC.exe'
 ```
 
-Installer output: `artifacts/installers/LaunchDesk-v0.8.0-win-x64-setup.exe` plus SHA-256. Installs for the current user to `%LOCALAPPDATA%\Programs\LaunchDesk`, with optional shortcuts and no default application launch. Exit the tray instance before upgrade/uninstall. User data is retained. This version tests fresh install, upgrade preservation and uninstall using the same script and release payload with an isolated installation identity; it does not upgrade the active production installation. Physical Windows 10 and real-service acceptance remain deferred. Installers are unsigned and bilingual (Simplified Chinese/English). Desktop uninstall retains separate service registration, runtime and data; uninstall the service explicitly first.
+Installer output: `artifacts/installers/LaunchDesk-v0.8.1-win-x64-setup.exe` plus SHA-256. Installs for the current user to `%LOCALAPPDATA%\Programs\LaunchDesk`, with optional shortcuts and no default application launch. Exit the tray instance before upgrade/uninstall. User data is retained. This version tests fresh install, upgrade preservation and uninstall using the same script and release payload with an isolated installation identity; it does not upgrade the active production installation. Physical Windows 10 and real-service acceptance remain deferred. Installers are unsigned and bilingual (Simplified Chinese/English). Desktop uninstall retains separate service registration, runtime and data; uninstall the service explicitly first.
 
 See [Project structure](docs/project-structure.md). Generated files belong under `artifacts/`.
 
 Tests use isolated directories and disposable processes. They cover output flooding, UTF-8 chunking, GBK, trailing partial lines, raw bytes, BAT paths/pause, npm, stdin, environment, dependencies, lifecycle races, restart limits, log failures and process-tree cleanup. Three real services remain untested at the user's request.
 
-The current source core inventory has 107 groups, each in a separate job-contained host with a 120-second deadline and process-tree cleanup. Without a signing fixture, three groups are explicitly skipped; strict CI rejects skips. Historical reports: [Test evidence](docs/test-summary.md). Developers can run `./tests/Verify-Ui.ps1` and `./tests/Verify-Engineering.ps1`. Temporary self-signed trust roots are allowed only on disposable GitHub-hosted runners, never developer workstations. Bilingual XAML resource keys, 1,000-item configuration and 200 MiB log gates are described in [test isolation and scale](docs/scale-and-test-gates.md), including bounded soak commands and limitations. The published v0.8.0 Release and [review record](docs/release-v0.8.0.md) record its 104-group verification scope; subsequent unpublished repairs are described in [manager, service and CLI follow-up](docs/v0.8-review-manager-service-cli.md) and [log display boundary](docs/log-projection-boundary.md). Packaging refuses nonempty publish directories; use a new output directory.
+The current source core inventory has 107 groups, each in a separate job-contained host with a 120-second deadline and process-tree cleanup. Without a signing fixture, three groups are explicitly skipped; strict CI rejects skips. Historical reports: [Test evidence](docs/test-summary.md). Developers can run `./tests/Verify-Ui.ps1` and `./tests/Verify-Engineering.ps1`. Temporary self-signed trust roots are allowed only on disposable GitHub-hosted runners, never developer workstations. Bilingual XAML resource keys, 1,000-item configuration and 200 MiB log gates are described in [test isolation and scale](docs/scale-and-test-gates.md), including bounded soak commands and limitations. The published v0.8.0 Release and [review record](docs/release-v0.8.0.md) record its 104-group verification scope; subsequent repairs included in v0.8.1 are described in [manager, service and CLI follow-up](docs/v0.8-review-manager-service-cli.md) and [log display boundary](docs/log-projection-boundary.md). Packaging refuses nonempty publish directories; use a new output directory.
 
 ```powershell
 tests/LaunchDesk.UiChecks/bin/Release/net10.0-windows/LaunchDesk.UiChecks.exe --ui-smoke artifacts/ui.png
@@ -174,6 +180,22 @@ Use [Issues](https://github.com/hailaij/LaunchDesk/issues) or pull requests. Run
 [MIT](LICENSE). Runtime terms: [Third-party notices](THIRD-PARTY-NOTICES.md). Network and local data handling: [Privacy Policy](PRIVACY.md).
 
 ## Changelog
+
+### [0.8.1] - 2026-10-12
+
+#### Fixed
+
+- Manager-switch rollback, isolated service diagnostics and CLI JSON contracts; production fault injection moved to the test host.
+- Empty recovery selections, installer compiler resolution and long log display prefixes, truncation markers and Chinese/emoji boundaries.
+
+#### Improved
+
+- Batched log persistence, pooled decoding and indexed deltas while retaining stop draining and raw-log integrity.
+- 107 independently job-contained tests, timeout cleanup, bilingual resource keys, 1,000-item and 200 MiB gates, source-hashed evidence.
+
+#### Limitations
+
+- Unsigned, manual installation only; production authorization remains required for trusted publication. One-hour endurance, physical Win10 and real-service acceptance remain deferred.
 
 ### [0.8.0] - 2026-10-12
 

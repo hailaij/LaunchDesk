@@ -175,7 +175,7 @@ tests/LaunchDesk.UiChecks/bin/Release/net10.0-windows/LaunchDesk.UiChecks.exe --
 
 独立测试宿主的 `--ui-smoke` 使用隔离数据目录，截图中的启动项不会执行。生产程序拒绝全部 `--ui-*` 测试参数。GitHub Actions 还会验证签名样本、双语截图像素、虚拟化、异常恢复与进程清理，并上传报告及来源元数据，详见 [测试证据与故障隔离](docs/test-evidence-and-fault-isolation.md)。
 
-当前源码主测试清单为 106 组；无签名样本时 3 组明确跳过。CI 的 `--fail-on-skip` 拒绝任何跳过，历史报告见 [测试证据](docs/test-summary.md)。开发电脑可运行 `./tests/Verify-Ui.ps1` 和 `./tests/Verify-Engineering.ps1`；CI 自签证书脚本仅允许临时 GitHub-hosted runner。已发布 v0.8.0 的 104 组验证及资产验收见 Release 和 [本版复查](docs/release-v0.8.0.md)，后续未发布修复见 [管理器、服务诊断与 CLI JSON 复现](docs/v0.8-review-manager-service-cli.md)及[日志显示边界](docs/log-projection-boundary.md)。重复打包须使用新的输出目录，非空发布目录会被拒绝。
+当前源码主测试清单为 107 组，每组在独立受管宿主内执行，120 秒超时后清理整个进程树；无签名样本时 3 组明确跳过。CI 的 `--fail-on-skip` 拒绝任何跳过，历史报告见 [测试证据](docs/test-summary.md)。开发电脑可运行 `./tests/Verify-Ui.ps1` 和 `./tests/Verify-Engineering.ps1`；CI 自签证书脚本仅允许临时 GitHub-hosted runner。新增中英文 XAML 资源键门禁、1000 项配置与 200 MiB 日志验证，命令及持续运行边界见 [测试隔离与规模验证](docs/scale-and-test-gates.md)。已发布 v0.8.0 的 104 组验证及资产验收见 Release 和 [本版复查](docs/release-v0.8.0.md)，后续未发布修复见 [管理器、服务诊断与 CLI JSON 复现](docs/v0.8-review-manager-service-cli.md)及[日志显示边界](docs/log-projection-boundary.md)。重复打包须使用新的输出目录，非空发布目录会被拒绝。
 
 ## 贡献
 

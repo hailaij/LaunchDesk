@@ -26,6 +26,25 @@ void PublishMarker(string path, string value)
 }
 if (args.Length > 0 && args[0] != "--report")
 {
+    if (args.Length >= 4 && args[0] == "--bounded-tool")
+    {
+        var deadline = int.Parse(args[1]);
+        if (deadline < 1 || deadline > 300) throw new ArgumentOutOfRangeException(nameof(deadline));
+        var item = new LaunchItem { Kind = LaunchKind.Executable, Target = Path.GetFullPath(args[2]),
+            Arguments = string.Join(' ', args.Skip(3).Select(LaunchCommand.Quote)), WorkingDirectory = Environment.CurrentDirectory };
+        Console.Write(await IsolatedTest.Run(item, TimeSpan.FromSeconds(deadline))); return 0;
+    }
+    if (args is ["--scale-validation", var scaleReport, var seconds, var mib])
+    {
+        var duration = int.Parse(seconds);
+        scaleReport = Path.GetFullPath(scaleReport);
+        if (duration < 30 || duration > 86400) throw new ArgumentOutOfRangeException(nameof(seconds));
+        await IsolatedTest.Run(Worker("--scale-inner " + LaunchCommand.Quote(scaleReport) + " " + duration + " " + mib), TimeSpan.FromSeconds(duration + 180));
+        if (!File.Exists(scaleReport)) throw new InvalidDataException("Scale validation did not produce a passing report");
+        return 0;
+    }
+    if (args is ["--scale-inner", var innerReport, var innerSeconds, var innerMiB])
+    { await ScaleChecks.Run(innerReport, int.Parse(innerSeconds), int.Parse(innerMiB), Worker); return 0; }
     if (args[0] == "--elevated")
     {
         await ElevationBroker.RunHelperAsync(args[1], args[2], int.Parse(args[3]), long.Parse(args[4]), _ => Task.CompletedTask, requireAdministrator: false);
@@ -90,6 +109,7 @@ if (args.Length > 0 && args[0] != "--report")
         Console.InputEncoding = new UTF8Encoding(false);
         switch (args[1])
         {
+            case "scale": await ScaleChecks.WriteWorker(int.Parse(args[2])); return 0;
             case "health-ready":
                 while (!File.Exists(args[2])) await Task.Delay(20);
                 Console.Write("READY"); Console.Out.Flush(); await Task.Delay(Timeout.Infinite); break;
@@ -178,7 +198,20 @@ IEnumerable<string> ReadLog(string file)
 async Task Test(string name, Func<Task> action)
 {
     if (filter is not null && !name.Contains(filter, StringComparison.OrdinalIgnoreCase)) return;
+    if (args.Contains("--isolated-case") && name != filter) return;
     var time = Stopwatch.StartNew();
+    if (!args.Contains("--isolated-case"))
+    {
+        var childReport = Path.Combine(root, "cases", Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            var command = "--report " + LaunchCommand.Quote(childReport) + " --filter " + LaunchCommand.Quote(name) + " --isolated-case";
+            var result = await IsolatedTest.RunCase(Worker(command), childReport, name);
+            results.Add(result); Console.WriteLine(result.status.ToUpperInvariant() + " " + name);
+        }
+        catch (Exception error) { results.Add(new(name, "failed", time.ElapsedMilliseconds, error: error.ToString())); Console.WriteLine("FAIL " + name + ": " + error); }
+        return;
+    }
     try { await action(); Console.WriteLine("PASS " + name); results.Add(new(name, "passed", time.ElapsedMilliseconds)); }
     catch (TestSkippedException error) { Console.WriteLine("SKIP " + name + ": " + error.Message); results.Add(new(name, "skipped", time.ElapsedMilliseconds, reason: error.Message)); }
     catch (Exception error) { Console.WriteLine("FAIL " + name + ": " + error); results.Add(new(name, "failed", time.ElapsedMilliseconds, error: error.ToString())); }
@@ -186,6 +219,15 @@ async Task Test(string name, Func<Task> action)
 async Task Signal(int pid)
 { using var helper = Process.Start(Self("--signal", pid.ToString()))!; await helper.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3)); }
 
+await Test("Isolated test deadline kills root and descendants", async () =>
+{
+    var marker = Path.Combine(root, "timeout-tree.txt");
+    try { await IsolatedTest.Run(Worker("--worker spawn " + LaunchCommand.Quote(marker)), TimeSpan.FromSeconds(2)); throw new Exception("Deadline not enforced"); }
+    catch (TimeoutException) { }
+    Assert(File.Exists(marker), "Hung worker did not start");
+    var ids = File.ReadAllText(marker).Split(',').Select(int.Parse).ToArray();
+    Assert(ids.Length == 2 && ids.All(pid => !Alive(pid)), "Timed-out worker or descendant survived");
+});
 await ReliabilityChecks.Run(root, Test);
 await DataReliabilityChecks.Run(root, Test, Self);
 await HealthChecks.Run(root, Test, Worker);

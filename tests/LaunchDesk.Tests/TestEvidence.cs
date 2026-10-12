@@ -16,7 +16,13 @@ internal static class TestEvidence
             foreach (var argument in arguments) info.ArgumentList.Add(argument);
             using var process = Process.Start(info)!;
             var output = process.StandardOutput.ReadToEndAsync(); var error = process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30)); }
+            finally
+            {
+                if (!process.HasExited) process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+                await Task.WhenAll(output, error).WaitAsync(TimeSpan.FromSeconds(10));
+            }
             if (process.ExitCode != 0) throw new IOException("Evidence command failed: " + command + ": " + await error);
             await error; return (await output).TrimEnd();
         }

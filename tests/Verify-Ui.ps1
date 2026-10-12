@@ -10,7 +10,7 @@ function Run-App([string]$Mode, [string]$Report) {
     try {
         if (-not $process.WaitForExit(120000)) { throw "UI smoke timed out: $Mode" }
         if ($process.ExitCode -ne 0) { throw "UI smoke failed: $Mode, exit $($process.ExitCode)" }
-    } finally { if (-not $process.HasExited) { $process.Kill(); $process.WaitForExit() }; $process.Dispose() }
+    } finally { if (-not $process.HasExited) { $process.Kill($true); if (-not $process.WaitForExit(10000)) { throw 'UI host cleanup timed out' } }; $process.Dispose() }
 }
 foreach ($mode in @('--ui-smoke', '--ui-smoke-en-min')) {
     $path = Join-Path $output ($mode.TrimStart('-') + '.png')

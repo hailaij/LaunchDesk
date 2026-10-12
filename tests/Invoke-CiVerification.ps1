@@ -20,11 +20,18 @@ try {
     dotnet run --project tests/LaunchDesk.Tests -c Release --no-build -- --log-benchmark (Join-Path $output 'log-backend.json')
     if ($LASTEXITCODE -ne 0) { throw 'Log backend benchmark failed' }
     & (Join-Path $PSScriptRoot 'Assert-LogBackendPerformance.ps1') -Path (Join-Path $output 'log-backend.json')
+    Write-Host 'CI verification: 1000 items, 200 MiB payload, bounded two-minute soak'
+    dotnet run --project tests/LaunchDesk.Tests -c Release --no-build -- --scale-validation (Join-Path $output 'scale-soak.json') 120 200
+    if ($LASTEXITCODE -ne 0) { throw 'Scale and soak validation failed' }
     & (Join-Path $PSScriptRoot 'Verify-InnoCompiler.ps1') -OutputDirectory (Join-Path $output 'compiler-path')
     & (Join-Path $PSScriptRoot 'Verify-Documentation.ps1') -OutputDirectory (Join-Path $output 'documentation')
     Write-Host 'CI verification: running engineering contracts'
     & (Join-Path $PSScriptRoot 'Verify-Engineering.ps1') -OutputDirectory (Join-Path $output 'engineering-contracts')
     Write-Host 'CI verification: running UI and fatal-cleanup checks'
+    dotnet run --project tests/LaunchDesk.Tests -c Release --no-build -- --bounded-tool 90 'tests/LaunchDesk.UiChecks/bin/Release/net10.0-windows/LaunchDesk.UiChecks.exe' --resource-keys (Join-Path $output 'resource-keys.json')
+    if ($LASTEXITCODE -ne 0) { throw 'Bilingual XAML resource keys failed' }
+    dotnet run --project tests/LaunchDesk.Tests -c Release --no-build -- --bounded-tool 90 'tests/LaunchDesk.UiChecks/bin/Release/net10.0-windows/LaunchDesk.UiChecks.exe' --scale-ui (Join-Path $output 'scale-ui.json')
+    if ($LASTEXITCODE -ne 0) { throw '1000-item UI validation failed' }
     & (Join-Path $PSScriptRoot 'Verify-Ui.ps1') -OutputDirectory (Join-Path $output 'ui')
     & (Join-Path $PSScriptRoot 'Reproduce-DataLifecycle.ps1') -ManagerOnly -OutputDirectory (Join-Path $output 'manager-switch')
 }

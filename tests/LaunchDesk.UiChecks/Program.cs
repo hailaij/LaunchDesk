@@ -11,6 +11,8 @@ internal static class UiChecks
     public static int Main(string[] args)
     {
         System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        if (args is ["--resource-keys", var resourceReport]) return ResourceChecks.Run(resourceReport);
+        if (args is ["--scale-ui", var scaleReport]) return ScaleUiChecks.Run(scaleReport);
         if (args.Length == 2 && args[0] == "--signal" && int.TryParse(args[1], out var pid))
         { var sent = NativeProcess.SendControlSignal(pid, out var detail); if (!sent) Console.Error.WriteLine(detail); Thread.Sleep(100); return sent ? 0 : 1; }
         if (args.Length == 2 && args[0] is "--ui-fault-loaded" or "--ui-fault-dispatcher" or "--ui-smoke" or "--ui-smoke-min" or "--ui-smoke-en" or "--ui-smoke-en-min")

@@ -8,8 +8,16 @@
   #error OutputDir must be supplied by build-installer.ps1
 #endif
 
+#ifdef IsolationId
+  #define SetupAppId "{{" + IsolationId + "}"
+  #define InstallerMutex "Local\LaunchDesk-Accept-" + IsolationId
+#else
+  #define SetupAppId "{{9A2D379B-6292-4F1F-98D1-68F47AB28483}"
+  #define InstallerMutex "Local\LaunchDesk-InstallerGuard"
+#endif
+
 [Setup]
-AppId={{9A2D379B-6292-4F1F-98D1-68F47AB28483}
+AppId={#SetupAppId}
 AppName=LaunchDesk
 AppVersion={#AppVersion}
 AppPublisher=hailaij
@@ -30,7 +38,7 @@ LicenseFile=..\LICENSE
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-AppMutex=Local\LaunchDesk-InstallerGuard
+AppMutex={#InstallerMutex}
 CloseApplications=no
 RestartApplications=no
 UsePreviousAppDir=yes
@@ -60,7 +68,7 @@ Filename: "{app}\LaunchDesk.exe"; Description: "Launch LaunchDesk (may start con
 [Code]
 function InitializeUninstall(): Boolean;
 begin
-  Result := not CheckForMutexes('Local\LaunchDesk-InstallerGuard');
+  Result := not CheckForMutexes('{#InstallerMutex}');
   if not Result then
     MsgBox('Exit LaunchDesk from its tray menu before uninstalling. Exiting stops managed services. User configuration and logs will be preserved.', mbError, MB_OK);
 end;

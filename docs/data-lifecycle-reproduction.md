@@ -1,5 +1,10 @@
 # Data and Manager Reproduction
 
+Historical pre-fix observations. For the subsequent fixes and current regression
+contracts, see [Data Save and Migration Reliability](data-reliability-fixes.md).
+This observation harness intentionally expects the old defects; use the normal
+product test suite to verify the repaired behavior.
+
 Date: 2026-10-12. Baseline: commit 43449c5 with the existing uncommitted Windows
 10 compatibility changes. This task adds reproduction tools only, not production
 fixes. The original user configuration, locator, startup registry and services

@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Path, [switch]$RequireNoSkips, [int]$ExpectedCount = 76)
+param([Parameter(Mandatory)][string]$Path, [switch]$RequireNoSkips, [int]$ExpectedCount = 81)
 $ErrorActionPreference = 'Stop'
 $results = @(Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json)
 if ($results.Count -ne $ExpectedCount -or @($results.name | Sort-Object -Unique).Count -ne $results.Count) { throw "Unexpected/duplicate test inventory: $($results.Count), expected $ExpectedCount" }

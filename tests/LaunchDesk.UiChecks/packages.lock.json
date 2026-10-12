@@ -5,7 +5,7 @@
       "LaunchDesk": {
         "type": "Project",
         "dependencies": {
-          "LaunchDesk.Core": "[0.7.0, )"
+          "LaunchDesk.Core": "[0.7.1, )"
         }
       },
       "launchdesk.core": {

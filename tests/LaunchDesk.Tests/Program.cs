@@ -16,6 +16,20 @@ LaunchItem Worker(string arguments) => new() { Name = "test", Kind = LaunchKind.
     WorkingDirectory = AppContext.BaseDirectory, StopTimeoutSeconds = 1 };
 if (args.Length > 0 && args[0] != "--report")
 {
+    if (args[0] == "--install-data-probe")
+    {
+        var data = new ConfigurationStore(args[1]).Load();
+        if (data.Items.Count != int.Parse(args[2]) || data.Folders.Count != 0) return 1;
+        if (data.Items.Count == 0 && (File.Exists(Path.Combine(args[1], "config.json"))
+            || Directory.Exists(Path.Combine(args[1], "logs")))) return 1;
+        Console.WriteLine("Isolated installed-data load verified"); return 0;
+    }
+    if (args[0] == "--save-worker")
+    {
+        var writer = new ConfigurationStore(args[1]);
+        for (var i = 0; i < 100; i++) writer.Save(new() { Items = [new() { Name = args[2] + i, Target = "not-executed" }] });
+        return 0;
+    }
     if (args[0] == "--signal") { var sent = NativeProcess.SendControlSignal(int.Parse(args[1])); Thread.Sleep(100); return sent ? 0 : 1; }
     if (args[0] == "--input-probe")
     {
@@ -135,6 +149,7 @@ async Task Signal(int pid)
 { using var helper = Process.Start(Self("--signal", pid.ToString()))!; await helper.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3)); }
 
 await ReliabilityChecks.Run(root, Test);
+await DataReliabilityChecks.Run(root, Test, Self);
 await CorrectnessChecks.Run(root, Test, Worker);
 await Test("Incremental log cursors handle retention clear and concurrent writes", async () =>
 {

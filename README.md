@@ -2,13 +2,20 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-Windows 启动项管理器。当前版本 **v0.7.0**（未签名预发布，0.x 开发阶段），支持中英文界面。
+Windows 启动项管理器。当前版本 **v0.7.1**（未签名预发布，0.x 开发阶段），支持中英文界面。
 
 **发布状态：**本版本为未签名预发布，仅供手动下载和安装。可信更新流水线在缺少正式签名配置时仍会阻断发布；测试证书不会用于生产信任。见 [可信度与工程化验收](docs/trust-and-engineering.md)。
 
 ![LaunchDesk](docs/images/main.png)
 
 ## 功能
+
+### v0.7.1 修复
+
+- 配置保存、读取、导出和备份统一 4 MiB 字节上限，超限不修改已有文件。
+- 迁移最终移动失败时恢复所选空目录，错误提示包含暂存数据路径。
+- 独立保存临时文件、串行提交和唯一备份名，防止并发失败误删其他写入者的数据。
+- 81 组主回归测试；安装验收使用隔离身份，不中断现有程序。详见 [数据可靠性](docs/data-reliability-fixes.md)。
 
 ### v0.7.0 新增与修复
 
@@ -62,7 +69,7 @@ Windows 启动项管理器。当前版本 **v0.7.0**（未签名预发布，0.x 
 
 面向 Windows 10/11 x64。自包含发布包自带 .NET 运行时，解压后运行 `LaunchDesk.exe`，请保留整个目录。
 
-从 [GitHub Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.7.0) 手动下载 `LaunchDesk-v0.7.0-win-x64-setup.exe` 安装程序，或 `LaunchDesk-v0.7.0-win-x64.zip` 免安装包。各文件附带 `.sha256` 校验文件。本版本为未签名预发布，不提供可信应用内更新。
+从 [GitHub Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.7.1) 手动下载 `LaunchDesk-v0.7.1-win-x64-setup.exe` 安装程序，或 `LaunchDesk-v0.7.1-win-x64.zip` 免安装包。各文件附带 `.sha256` 校验文件。本版本为未签名预发布，仅手动安装，不提供可信应用内更新。哈希不替代发行者签名。
 
 在设置的“外观”中选择浅色、深色或跟随系统，保存后立即生效。旧版本配置无需手动迁移，未指定主题时默认跟随系统。升级时请先从托盘退出旧版本，再解压到新目录运行；便携模式用户需将原目录的 `portable.flag` 和 `data\` 复制到新版本目录，原数据保留备份。
 
@@ -91,6 +98,8 @@ BAT 未指定工作目录时，默认使用 BAT 所在目录。命令类型按 c
 ### 数据与日志
 
 默认数据目录：`%LOCALAPPDATA%\LaunchDesk`。
+
+配置按序列化后的 UTF-8 字节计算，最多 4 MiB，超限会拒绝保存而不改动已有配置、导出文件或备份。每次保存使用独立临时文件；同一 Windows 会话内的并发提交串行执行，以最后提交的完整快照为准，不自动合并不同编辑。
 
 - `config.json`：启动项和偏好。
 - `backups\`：每次覆盖保存前的配置副本，保留 20 份。
@@ -131,7 +140,7 @@ BAT 未指定工作目录时，默认使用 BAT 所在目录。命令类型按 c
 ./scripts/build-installer.ps1 -CompilerPath 'D:\tool\Inno Setup 6\ISCC.exe'
 ```
 
-输出为 `artifacts/installers/LaunchDesk-v0.7.0-win-x64-setup.exe` 及 SHA-256 校验文件。安装包使用当前工作区源码构建。Inno Setup 6.7.3 的隔离安装、覆盖更新、卸载及用户数据保留在此前版本验证过；本版本重新执行构建、核心与界面回归，不宣称重新完成全部安装场景或真实服务验收。
+输出为 `artifacts/installers/LaunchDesk-v0.7.1-win-x64-setup.exe` 及 SHA-256 校验文件。本版验证相同脚本和发布文件的隔离首次安装、升级数据保留及卸载；测试仅覆盖独立安装身份，不覆盖正在使用的正式安装。Windows 10 实机及真实服务验收暂缓，详见本版 Release 的验证范围。
 
 默认安装到 `%LOCALAPPDATA%\Programs\LaunchDesk`，仅当前用户，无需管理员权限；创建开始菜单快捷方式，可选桌面快捷方式。完成后默认不启动应用，避免自动执行已配置服务。更新或卸载前请先从托盘退出实例；旧版便携程序需手动退出。卸载保留配置、日志、备份和便携数据，仅移除属于此安装路径的登录自启命令。安装器界面目前为英文，应用支持中英文切换。未配置代码签名证书，生成的安装器不会带发行者签名。
 
@@ -157,7 +166,7 @@ artifacts/LaunchDesk-win-x64/LaunchDesk.exe --ui-smoke-min artifacts/ui-minimum.
 
 `--ui-smoke` 使用独立测试数据目录，截图中的启动项不会执行。GitHub Actions 还会验证签名样本、双语截图像素、虚拟化、异常恢复与进程清理，并上传真实报告。
 
-当前开发测试清单为 76 组；无签名样本时 3 组明确跳过。CI 的 `--fail-on-skip` 拒绝任何跳过，详情及本机报告来源见 [测试证据](docs/test-summary.md)。开发电脑可运行 `./tests/Verify-Ui.ps1` 和 `./tests/Verify-Engineering.ps1`；CI 自签证书脚本仅允许临时 GitHub-hosted runner。此前 73 组云端报告只覆盖旧提交；v0.7.0 的提交、CI 与构建资产验收见本版本 Release 的验证部分。
+当前开发测试清单为 81 组；无签名样本时 3 组明确跳过。CI 的 `--fail-on-skip` 拒绝任何跳过，历史报告见 [测试证据](docs/test-summary.md)。开发电脑可运行 `./tests/Verify-Ui.ps1` 和 `./tests/Verify-Engineering.ps1`；CI 自签证书脚本仅允许临时 GitHub-hosted runner。当前提交、CI 与构建资产验收见 v0.7.1 Release 的验证部分。
 
 ## 贡献
 
@@ -170,6 +179,21 @@ LaunchDesk 使用 [MIT](LICENSE) 许可证。Windows/.NET 运行时按各自条�
 隐私与联网说明见 [隐私政策 / Privacy Policy](PRIVACY.md)。
 
 ## 更新日志
+
+### [0.7.1] - 2026-10-12
+
+#### 修复
+- 保存、读取、导出和手动备份统一 4 MiB 上限，防止成功保存后启动回退旧备份。
+- 迁移最终移动失败后恢复目标空目录，并显示保留的暂存数据位置。
+- 配置与目录定位保存使用独立临时文件；串行配置提交与唯一备份名防止竞争误删。
+
+#### 验证
+- 新增 5 组数据可靠性回归，主测试清单扩展至 81 组。
+- 相同安装脚本及发布文件的隔离首次安装、升级与数据保留验收，不中断现有实例。
+
+#### 限制
+- 未签名预发布，仅手动安装；可信更新不放宽验签规则。
+- Windows 10 实机图标、编码和安装升级验收仍暂缓；隔离安装身份不等同于现有正式安装升级。
 
 ### [0.7.0] - 2026-10-12
 

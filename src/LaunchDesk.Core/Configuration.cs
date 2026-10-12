@@ -108,6 +108,7 @@ public sealed class Configuration
 
 public sealed class ConfigurationStore
 {
+    private const int MaxConfigBytes = 4 * 1024 * 1024;
     public static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true, Converters = { new JsonStringEnumConverter() },
@@ -156,7 +157,7 @@ public sealed class ConfigurationStore
     public static Configuration Read(string path)
     {
         var info = new FileInfo(path);
-        if (info.Length > 4 * 1024 * 1024) throw new InvalidDataException("配置文件超过 4 MiB。");
+        if (info.Length > MaxConfigBytes) throw new InvalidDataException("配置文件超过 4 MiB。");
         var config = JsonSerializer.Deserialize<Configuration>(File.ReadAllText(path), JsonOptions)
             ?? throw new InvalidDataException("配置为空。");
         Validate(config);
@@ -224,40 +225,59 @@ public sealed class ConfigurationStore
     }
     public void Save(Configuration config)
     {
-        Validate(config);
-        var temp = ConfigPath + ".tmp";
+        var bytes = SerializeChecked(config);
+        var temp = ConfigPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
+            using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
-                JsonSerializer.Serialize(stream, config, JsonOptions); stream.Flush(true);
+                stream.Write(bytes); stream.Flush(true);
             }
-            if (File.Exists(ConfigPath))
+            // Serialize commits across store instances and processes without sharing temporary files.
+            var key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(ConfigPath.ToUpperInvariant())));
+            using var mutex = new Mutex(false, "Local\\LaunchDesk-Config-" + key);
+            var acquired = false;
+            try
             {
-                var backupDir = Path.Combine(Root, "backups"); Directory.CreateDirectory(backupDir);
-                var backup = Path.Combine(backupDir, $"config-{DateTime.UtcNow:yyyyMMdd-HHmmss-fffffff}.json");
-                File.Replace(temp, ConfigPath, backup);
-                try
+                try { acquired = mutex.WaitOne(TimeSpan.FromSeconds(30)); }
+                catch (AbandonedMutexException) { acquired = true; }
+                if (!acquired) throw new IOException("等待配置保存超时，原配置未被修改。");
+                if (File.Exists(ConfigPath))
                 {
-                    foreach (var old in new DirectoryInfo(backupDir).GetFiles("*.json").OrderByDescending(x => x.LastWriteTimeUtc).Skip(20))
-                    { try { old.Delete(); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
+                    var backupDir = Path.Combine(Root, "backups"); Directory.CreateDirectory(backupDir);
+                    var backup = Path.Combine(backupDir, $"config-{DateTime.UtcNow:yyyyMMdd-HHmmss-fffffff}-{Guid.NewGuid():N}.json");
+                    File.Replace(temp, ConfigPath, backup);
+                    try
+                    {
+                        foreach (var old in new DirectoryInfo(backupDir).GetFiles("*.json").OrderByDescending(x => x.LastWriteTimeUtc).Skip(20))
+                        { try { old.Delete(); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
+                    }
+                    catch (IOException) { }
+                    catch (UnauthorizedAccessException) { }
                 }
-                catch (IOException) { }
-                catch (UnauthorizedAccessException) { }
+                else File.Move(temp, ConfigPath);
             }
-            else File.Move(temp, ConfigPath);
+            finally { if (acquired) mutex.ReleaseMutex(); }
         }
         finally { if (File.Exists(temp)) File.Delete(temp); }
     }
-    public void Export(Configuration config, string destination) =>
-        File.WriteAllText(destination, JsonSerializer.Serialize(config, JsonOptions), new System.Text.UTF8Encoding(false));
-    public string BackupNow(Configuration config)
+    private static byte[] SerializeChecked(Configuration config)
     {
         Validate(config);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(config, JsonOptions);
+        if (bytes.Length > MaxConfigBytes) throw new InvalidDataException("配置文件超过 4 MiB，未保存；请减少启动项或参数内容。");
+        return bytes;
+    }
+    public void Export(Configuration config, string destination) =>
+        File.WriteAllBytes(destination, SerializeChecked(config));
+    public string BackupNow(Configuration config)
+    {
+        var bytes = SerializeChecked(config);
         var directory = Path.Combine(Root, "backups", "manual"); Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, $"config-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.json");
         using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-        JsonSerializer.Serialize(stream, config, JsonOptions); stream.Flush(true);
+        stream.Write(bytes); stream.Flush(true);
         return path;
     }
 }

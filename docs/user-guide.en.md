@@ -6,6 +6,10 @@ Output encoding: new items default to `auto`. Each output pipe starts with UTF-8
 
 Windows 10/11 x64 launch manager. Run `LaunchDesk.exe`; the self-contained application includes its runtime.
 
+v0.7.1 is an unsigned prerelease for manual installation only. SHA-256 checks integrity, not publisher identity. Exit the previous tray instance and back up data before upgrading.
+
+Configuration reads, saves, exports and manual backups share a 4 MiB serialized byte limit. Rejected writes preserve existing files. Failed migrations retain the source, restore the selected empty target and report the staging path; restoration permission failures are reported too. Unique temporary files and serialized commits prevent competing cleanup, but do not merge different edits.
+
 Choose **Settings > Appearance > Language > English** or Simplified Chinese and save. The change is immediate and retained. Names, commands, paths and original log text are not translated.
 
 First use has no sample items. Existing user configuration and logs are retained during upgrades. Closing the window hides it to the tray; **Exit** stops managed processes and drains logs. Exit before upgrading or uninstalling.

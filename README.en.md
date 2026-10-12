@@ -2,13 +2,20 @@
 
 [Simplified Chinese](README.md) | [English](README.en.md)
 
-A Windows desktop manager for scripts, commands and applications, with real-time logs. Current version: **v0.7.0** (unsigned prerelease, early development).
+A Windows desktop manager for scripts, commands and applications, with real-time logs. Current version: **v0.7.1** (unsigned prerelease, early development).
 
 **Release status:** This is an unsigned prerelease for manual download and installation only. Missing production signing configuration still blocks the trusted update pipeline. Test certificates never enter production trust. See [Trust and engineering verification](docs/trust-and-engineering.md).
 
 ![LaunchDesk](docs/images/main.png)
 
 ## Features
+
+### Fixed in v0.7.1
+
+- Shared 4 MiB serialized byte limit for configuration reads, saves, exports and backups; rejected writes preserve existing files.
+- Failed migration finalization restores the selected empty directory and reports the retained staging path.
+- Unique save temporary files, serialized commits and unique backup names prevent competing writers from deleting each other's data.
+- 81 core regression groups and isolated installer acceptance without interrupting the running application. See [Data reliability](docs/data-reliability-fixes.md).
 
 ### New and Fixed in v0.7.0
 
@@ -64,7 +71,7 @@ A Windows desktop manager for scripts, commands and applications, with real-time
 
 Windows 10/11 x64. Self-contained packages include the .NET runtime. Keep the entire extracted directory and launch `LaunchDesk.exe`.
 
-Manually download `LaunchDesk-v0.7.0-win-x64-setup.exe` or the portable `LaunchDesk-v0.7.0-win-x64.zip` from [Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.7.0). SHA-256 sidecar files are provided. This unsigned prerelease is not a trusted in-app update.
+Manually download `LaunchDesk-v0.7.1-win-x64-setup.exe` or the portable `LaunchDesk-v0.7.1-win-x64.zip` from [Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.7.1). SHA-256 sidecar files are provided. This unsigned prerelease requires manual installation and is not a trusted in-app update. Hashes do not replace publisher signatures.
 
 First launch is empty. No local services are preconfigured or executed. Closing the window hides it to the tray. Use **Exit** in the tray menu to stop all managed processes and drain logs before upgrading. Single-instance activation may restore an already running older copy; window titles show the actual assembly version, and cross-version/path launches show a warning.
 
@@ -87,6 +94,8 @@ BAT defaults to its own directory when no working directory is supplied. Command
 Folders are application groups, not disk directories. Folder start also starts explicit dependencies, possibly outside the folder; folder stop affects its own members only. Deleting a folder dissolves it without deleting items, running processes, logs or scripts. Stop an item before editing its execution settings or deleting it.
 
 ### Data and logs
+
+Configuration is limited to 4 MiB of serialized UTF-8 bytes. Oversized saves, exports and backups preserve existing files. Saves have unique temporary files; commits in the same Windows session are serialized. The last committed complete snapshot wins; different edits are not merged.
 
 Default data directory: `%LOCALAPPDATA%\LaunchDesk`.
 
@@ -126,13 +135,13 @@ dotnet run --project tests/LaunchDesk.Tests -c Release -- --report artifacts/tes
 ./scripts/build-installer.ps1 -CompilerPath 'D:\tool\Inno Setup 6\ISCC.exe'
 ```
 
-Installer output: `artifacts/installers/LaunchDesk-v0.7.0-win-x64-setup.exe` plus SHA-256. Installs for the current user to `%LOCALAPPDATA%\Programs\LaunchDesk`, creates Start menu and optional desktop shortcuts, and does not start the app by default. Exit the tray instance before update/uninstall. Uninstall retains user data and removes only login startup entries belonging to its install path. The installer is English; the application supports Chinese/English. Certificates are not configured, so current installers remain unsigned. Installation/update/uninstall scenarios were verified for earlier versions; this version reruns build/core/UI checks, not full installation acceptance or real-service tests.
+Installer output: `artifacts/installers/LaunchDesk-v0.7.1-win-x64-setup.exe` plus SHA-256. Installs for the current user to `%LOCALAPPDATA%\Programs\LaunchDesk`, with optional shortcuts and no default application launch. Exit the tray instance before upgrade/uninstall. User data is retained. This version tests fresh install, upgrade preservation and uninstall using the same script and release payload with an isolated installation identity; it does not upgrade the active production installation. Physical Windows 10 and real-service acceptance remain deferred. Installers are unsigned and English; the app supports Chinese/English.
 
 See [Project structure](docs/project-structure.md). Generated files belong under `artifacts/`.
 
 Tests use isolated directories and disposable processes. They cover output flooding, UTF-8 chunking, GBK, trailing partial lines, raw bytes, BAT paths/pause, npm, stdin, environment, dependencies, lifecycle races, restart limits, log failures and process-tree cleanup. Three real services remain untested at the user's request.
 
-The development test inventory has 76 groups. Without a signing fixture, three groups are explicitly skipped; strict CI rejects skips. See [Test evidence](docs/test-summary.md). Developers can run `./tests/Verify-Ui.ps1` and `./tests/Verify-Engineering.ps1`. Temporary self-signed trust roots are allowed only on disposable GitHub-hosted runners, never developer workstations. Earlier 73-group cloud reports cover the old commit only; the v0.7.0 Release verification section records its commit, CI and binary acceptance.
+The development test inventory has 81 groups. Without a signing fixture, three groups are explicitly skipped; strict CI rejects skips. Historical reports: [Test evidence](docs/test-summary.md). Developers can run `./tests/Verify-Ui.ps1` and `./tests/Verify-Engineering.ps1`. Temporary self-signed trust roots are allowed only on disposable GitHub-hosted runners, never developer workstations. The v0.7.1 Release verification section records its commit, CI and binary acceptance.
 
 ```powershell
 artifacts/LaunchDesk-win-x64/LaunchDesk.exe --ui-smoke artifacts/ui.png
@@ -152,6 +161,21 @@ Use [Issues](https://github.com/hailaij/LaunchDesk/issues) or pull requests. Run
 [MIT](LICENSE). Runtime terms: [Third-party notices](THIRD-PARTY-NOTICES.md). Network and local data handling: [Privacy Policy](PRIVACY.md).
 
 ## Changelog
+
+### [0.7.1] - 2026-10-12
+
+#### Fixed
+- Shared 4 MiB read/save/export/manual-backup limit prevents successful saves from reverting to older backups on restart.
+- Failed final migration moves restore the selected empty directory and report retained staging data.
+- Unique configuration/locator temporary files, serialized configuration commits and unique backup names prevent competing cleanup.
+
+#### Verification
+- Five new data reliability groups expand the core inventory to 81.
+- Isolated fresh install, upgrade and data preservation with the same installer script and release payload, without interrupting active instances.
+
+#### Limitations
+- Unsigned prerelease for manual installation only; trusted update checks remain strict.
+- Physical Windows 10 icon, encoding and installer-upgrade acceptance remains deferred; isolated identity tests do not upgrade an existing production installation.
 
 ### [0.7.0] - 2026-10-12
 

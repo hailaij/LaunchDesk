@@ -1,0 +1,67 @@
+using System.Diagnostics;
+using System.Text.Json;
+using LaunchDesk.Core;
+
+internal sealed class LifecycleProbe(LaunchItem item) : IManagedProcess
+{
+    private readonly NativeProcess native = new(item);
+    private ReadProbe? output, error;
+    private Task? exit;
+    public Stream Output => output ??= new(native.Output);
+    public Stream Error => error ??= new(native.Error);
+    public Stream Input => native.Input;
+    public int Id => native.Id;
+    public int ExitCode => native.ExitCode;
+    public bool ForcedTermination => native.ForcedTermination;
+    public Task WaitForExitAsync() => exit ??= native.WaitForExitAsync();
+    public void Kill() => native.Kill();
+    public void CloseInput() => native.CloseInput();
+    public Task SignalAsync(Func<int, Task> fallback) => native.SignalAsync(fallback);
+    public void Dispose() => native.Dispose();
+
+    public string Capture(ProcessManager manager)
+    {
+        object root;
+        try
+        {
+            using var process = Process.GetProcessById(Id);
+            root = new { process.Id, process.ProcessName, process.HasExited,
+                CpuMs = process.HasExited ? 0 : process.TotalProcessorTime.TotalMilliseconds,
+                Threads = process.HasExited ? 0 : process.Threads.Count };
+        }
+        catch (ArgumentException) { root = new { Id, Missing = true }; }
+        var evidence = new { Command = LaunchCommand.From(item), Snapshot = manager.Snapshot(item.Id), Root = root,
+            JobExitTask = exit?.Status.ToString(), StdoutBytes = output?.Bytes, StdoutEof = output?.Eof,
+            StderrBytes = error?.Bytes, StderrEof = error?.Eof,
+            Logs = manager.Logs(item.Id).Snapshot().Select(x => new { x.Channel, x.Text }) };
+        var json = JsonSerializer.Serialize(evidence, new JsonSerializerOptions { WriteIndented = true });
+        var directory = Environment.GetEnvironmentVariable("LAUNCHDESK_TEST_DIAGNOSTICS_DIR");
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(Path.Combine(directory, "lifecycle-" + item.Id + ".json"), json);
+        }
+        return json;
+    }
+
+    private sealed class ReadProbe(Stream stream) : Stream
+    {
+        public long Bytes;
+        public bool Eof;
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var count = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            Interlocked.Add(ref Bytes, count); if (count == 0) Eof = true; return count;
+        }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Flush() => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+}

@@ -2,8 +2,10 @@ param([string]$OutputDirectory = 'artifacts/verification')
 $ErrorActionPreference = 'Stop'
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 $previous = $env:LAUNCHDESK_SIGNED_FIXTURE
+$previousDiagnostics = $env:LAUNCHDESK_TEST_DIAGNOSTICS_DIR
 $manifest = $null
 New-Item -ItemType Directory -Path $output -Force | Out-Null
+$env:LAUNCHDESK_TEST_DIAGNOSTICS_DIR = Join-Path $output 'lifecycle-diagnostics'
 Write-Host 'CI verification: recording runner environment'
 @{ commit = $env:GITHUB_SHA; image = $env:ImageOS; imageVersion = $env:ImageVersion; sdk = (dotnet --version); powershell = $PSVersionTable.PSVersion.ToString(); runner = $env:RUNNER_ENVIRONMENT } |
     ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'environment.json') -Encoding utf8
@@ -38,6 +40,7 @@ try {
 finally {
     Write-Host 'CI verification: cleaning temporary certificate and key'
     $env:LAUNCHDESK_SIGNED_FIXTURE = $previous
+    $env:LAUNCHDESK_TEST_DIAGNOSTICS_DIR = $previousDiagnostics
     if ($manifest -and (Test-Path -LiteralPath $manifest)) {
         $thumbprint = (Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json).thumbprint
         if ($thumbprint -notmatch '^[A-Fa-f0-9]{40}$') { throw 'Invalid test certificate cleanup identity' }

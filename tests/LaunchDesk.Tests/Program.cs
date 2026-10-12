@@ -813,13 +813,14 @@ await Test("npm run start in isolated project", async () =>
     item.Environment["NPM_CONFIG_UPDATE_NOTIFIER"] = "false";
     item.Environment["NPM_CONFIG_AUDIT"] = "false";
     item.Environment["NPM_CONFIG_FUND"] = "false";
-    await using var manager = new ProcessManager(new() { Items = [item] }, root, Signal);
+    LifecycleProbe? probe = null;
+    await using var manager = new ProcessManager(new() { Items = [item] }, root, Signal,
+        (launchItem, _) => Task.FromResult<IManagedProcess>(probe = new(launchItem)));
     await manager.StartAsync(item.Id);
     try { await Until(() => !manager.Snapshot(item.Id).Active, 30); }
     catch (TimeoutException error)
     {
-        throw new TimeoutException("npm fixture did not exit: " + JsonSerializer.Serialize(manager.Snapshot(item.Id))
-            + "\n" + string.Concat(manager.Logs(item.Id).Snapshot().Select(x => x.Text)), error);
+        throw new TimeoutException("npm fixture did not exit: " + probe!.Capture(manager), error);
     }
     Assert(manager.Snapshot(item.Id).ExitCode == 0, "npm exit");
     var all = manager.Logs(item.Id).Snapshot(); Assert(string.Concat(all.Where(x => x.Channel == "stdout").Select(x => x.Text)).Contains("npm-ok"), "npm stdout");
@@ -909,16 +910,24 @@ await Test("PowerShell and Git Bash isolated scripts", async () =>
     var psPath = Path.Combine(root, "worker.ps1");
     await File.WriteAllTextAsync(psPath, "param([string]$Name)\n[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)\n[Console]::Write('ps-' + $Name)\n");
     var item = new LaunchItem { Name = "ps", Kind = LaunchKind.PowerShell, Target = psPath, Interpreter = "powershell.exe", Arguments = "-Name 中文", WorkingDirectory = root };
-    await using var manager = new ProcessManager(new() { Items = [item] }, root, Signal);
-    await manager.StartAsync(item.Id); await Until(() => !manager.Snapshot(item.Id).Active);
+    LifecycleProbe? probe = null;
+    await using var manager = new ProcessManager(new() { Items = [item] }, root, Signal,
+        (launchItem, _) => Task.FromResult<IManagedProcess>(probe = new(launchItem)));
+    await manager.StartAsync(item.Id);
+    try { await Until(() => !manager.Snapshot(item.Id).Active); }
+    catch (TimeoutException exception) { throw new TimeoutException("PowerShell fixture: " + probe!.Capture(manager), exception); }
     Assert(manager.Snapshot(item.Id).ExitCode == 0, "PowerShell exit");
     Assert(string.Concat(manager.Logs(item.Id).Snapshot().Where(x => x.Channel == "stdout").Select(x => x.Text)) == "ps-中文", "PowerShell text");
     var git = LaunchCommand.Resolve("git.exe", root); var bash = Path.Combine(Directory.GetParent(Path.GetDirectoryName(git)!)!.FullName, "bin", "bash.exe");
     if (!File.Exists(bash)) bash = Path.Combine(Path.GetDirectoryName(git)!, "bash.exe");
     var shPath = Path.Combine(root, "worker.sh"); await File.WriteAllTextAsync(shPath, "printf 'shell-ok\\n'\n");
     var shell = new LaunchItem { Name = "shell", Kind = LaunchKind.Shell, Target = shPath, Interpreter = bash, WorkingDirectory = root };
-    await using var manager2 = new ProcessManager(new() { Items = [shell] }, root, Signal);
-    await manager2.StartAsync(shell.Id); await Until(() => !manager2.Snapshot(shell.Id).Active);
+    LifecycleProbe? shellProbe = null;
+    await using var manager2 = new ProcessManager(new() { Items = [shell] }, root, Signal,
+        (launchItem, _) => Task.FromResult<IManagedProcess>(shellProbe = new(launchItem)));
+    await manager2.StartAsync(shell.Id);
+    try { await Until(() => !manager2.Snapshot(shell.Id).Active); }
+    catch (TimeoutException exception) { throw new TimeoutException("Git Bash fixture: " + shellProbe!.Capture(manager2), exception); }
     Assert(manager2.Snapshot(shell.Id).ExitCode == 0, "Shell exit");
     Assert(string.Concat(manager2.Logs(shell.Id).Snapshot().Where(x => x.Channel == "stdout").Select(x => x.Text)).Contains("shell-ok"), "Shell text");
 });

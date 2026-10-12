@@ -22,6 +22,13 @@ ownership, independent service paths, installer/signing inventories, accessibili
 and release documentation. This is a focused engineering review, not certification
 of every Windows service or privilege boundary.
 
+Initial remote CI identified a fixture marker-file read/write race and an npm
+fixture timeout. Crash-owner markers now publish by atomic rename; the npm
+fixture disables update-notifier/audit/fund network side effects, uses a bounded
+30-second deadline and includes state/logs on failure. No production npm settings
+or process-tree ownership semantics were changed. Final CI status is linked on
+the Release; the failed initial run is not presented as passed.
+
 ## Automated Evidence / 自动化证据
 
 - Locked restore and Release build: zero warnings/errors.

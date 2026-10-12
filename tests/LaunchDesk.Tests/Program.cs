@@ -14,6 +14,12 @@ ProcessStartInfo Self(params string[] args)
 LaunchItem Worker(string arguments) => new() { Name = "test", Kind = LaunchKind.Executable, Target = self,
     Arguments = (Path.GetFileNameWithoutExtension(self) == "dotnet" ? LaunchCommand.Quote(typeof(LaunchItem).Assembly.Location.Replace("LaunchDesk.Core.dll", "LaunchDesk.Tests.dll")) + " " : "") + arguments,
     WorkingDirectory = AppContext.BaseDirectory, StopTimeoutSeconds = 1 };
+void PublishMarker(string path, string value)
+{
+    var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+    File.WriteAllText(temporary, value);
+    File.Move(temporary, path, true);
+}
 if (args.Length > 0 && args[0] != "--report")
 {
     if (args[0] == "--elevated")
@@ -25,7 +31,7 @@ if (args.Length > 0 && args[0] != "--report")
     {
         using var process = await ElevationBroker.StartAsync(Worker("--worker sleep"), self, CancellationToken.None,
             info => Process.Start(Self(info.ArgumentList.ToArray())));
-        File.WriteAllText(args[1], process.Id.ToString());
+        PublishMarker(args[1], process.Id.ToString());
         await Task.Delay(Timeout.Infinite); return 0;
     }
     if (args[0] == "--journal-owner")
@@ -35,7 +41,7 @@ if (args.Length > 0 && args[0] != "--report")
         new ConfigurationStore(args[1]).Save(config);
         await using var manager = new ProcessManager(config, args[1]) { Session = journal };
         await manager.StartAsync(item.Id);
-        File.WriteAllText(args[2], JsonSerializer.Serialize(new ProductChecks.OwnerMarker(item.Id, manager.Snapshot(item.Id).Pid!.Value)));
+        PublishMarker(args[2], JsonSerializer.Serialize(new ProductChecks.OwnerMarker(item.Id, manager.Snapshot(item.Id).Pid!.Value)));
         await Task.Delay(Timeout.Infinite); return 0;
     }
     if (args[0] == "--install-data-probe")
@@ -727,8 +733,18 @@ await Test("npm run start in isolated project", async () =>
     var folder = Path.Combine(root, "npm sample"); Directory.CreateDirectory(folder);
     await File.WriteAllTextAsync(Path.Combine(folder, "package.json"), "{\"private\":true,\"scripts\":{\"start\":\"node -e \\\"process.stdout.write('npm-ok');process.stderr.write('npm-err')\\\"\"}}");
     var item = new LaunchItem { Name = "npm", Kind = LaunchKind.Command, Target = "npm", Arguments = "run start", WorkingDirectory = folder };
+    // Keep this process fixture offline; npm's update notifier can outlive the test script.
+    item.Environment["NPM_CONFIG_UPDATE_NOTIFIER"] = "false";
+    item.Environment["NPM_CONFIG_AUDIT"] = "false";
+    item.Environment["NPM_CONFIG_FUND"] = "false";
     await using var manager = new ProcessManager(new() { Items = [item] }, root, Signal);
-    await manager.StartAsync(item.Id); await Until(() => !manager.Snapshot(item.Id).Active);
+    await manager.StartAsync(item.Id);
+    try { await Until(() => !manager.Snapshot(item.Id).Active, 30); }
+    catch (TimeoutException error)
+    {
+        throw new TimeoutException("npm fixture did not exit: " + JsonSerializer.Serialize(manager.Snapshot(item.Id))
+            + "\n" + string.Concat(manager.Logs(item.Id).Snapshot().Select(x => x.Text)), error);
+    }
     Assert(manager.Snapshot(item.Id).ExitCode == 0, "npm exit");
     var all = manager.Logs(item.Id).Snapshot(); Assert(string.Concat(all.Where(x => x.Channel == "stdout").Select(x => x.Text)).Contains("npm-ok"), "npm stdout");
     Assert(string.Concat(all.Where(x => x.Channel == "stderr").Select(x => x.Text)).Contains("npm-err"), "npm stderr");

@@ -2,15 +2,22 @@ using System.Diagnostics;
 using System.Text.Json;
 using LaunchDesk.Core;
 
-internal sealed class LifecycleProbe(LaunchItem item) : IManagedProcess
+internal sealed class LifecycleProbe : IManagedProcess
 {
-    private readonly NativeProcess native = new(item);
+    private readonly LaunchItem item;
+    private readonly NativeProcess native;
+    private readonly int id;
+    private readonly Stopwatch elapsed = Stopwatch.StartNew();
+    public LifecycleProbe(LaunchItem item)
+    {
+        this.item = item; native = new(item); id = native.Id;
+    }
     private ReadProbe? output, error;
     private Task? exit;
     public Stream Output => output ??= new(native.Output);
     public Stream Error => error ??= new(native.Error);
     public Stream Input => native.Input;
-    public int Id => native.Id;
+    public int Id => id;
     public int ExitCode => native.ExitCode;
     public bool ForcedTermination => native.ForcedTermination;
     public Task WaitForExitAsync() => exit ??= native.WaitForExitAsync();
@@ -29,8 +36,10 @@ internal sealed class LifecycleProbe(LaunchItem item) : IManagedProcess
                 CpuMs = process.HasExited ? 0 : process.TotalProcessorTime.TotalMilliseconds,
                 Threads = process.HasExited ? 0 : process.Threads.Count };
         }
-        catch (ArgumentException) { root = new { Id, Missing = true }; }
-        var evidence = new { Command = LaunchCommand.From(item), Snapshot = manager.Snapshot(item.Id), Root = root,
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        { root = new { Id, Unavailable = exception.Message }; }
+        var evidence = new { At = DateTimeOffset.UtcNow, ElapsedMs = elapsed.ElapsedMilliseconds,
+            Command = LaunchCommand.From(item), Snapshot = manager.Snapshot(item.Id), Root = root,
             JobExitTask = exit?.Status.ToString(), StdoutBytes = output?.Bytes, StdoutEof = output?.Eof,
             StderrBytes = error?.Bytes, StderrEof = error?.Eof,
             Logs = manager.Logs(item.Id).Snapshot().Select(x => new { x.Channel, x.Text }) };
@@ -47,7 +56,7 @@ internal sealed class LifecycleProbe(LaunchItem item) : IManagedProcess
     private sealed class ReadProbe(Stream stream) : Stream
     {
         public long Bytes;
-        public bool Eof;
+        public volatile bool Eof;
         public override bool CanRead => true;
         public override bool CanSeek => false;
         public override bool CanWrite => false;

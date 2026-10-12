@@ -1,0 +1,50 @@
+name: Interpreter lifecycle diagnostics (not release verification)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          global-json-file: global.json
+      - name: Locked restore and build
+        shell: pwsh
+        run: |
+          dotnet restore LaunchDesk.slnx --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw 'Restore failed' }
+          dotnet build LaunchDesk.slnx -c Release --no-restore -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+      - name: Repeat interpreter cases without retrying failed assertions
+        shell: pwsh
+        run: |
+          $output = Join-Path $PWD 'artifacts/interpreter-diagnostics'
+          New-Item -ItemType Directory -Path $output -Force | Out-Null
+          $env:LAUNCHDESK_TEST_DIAGNOSTICS_DIR = Join-Path $output 'phases'
+          $results = @()
+          for ($iteration = 1; $iteration -le 5; $iteration++) {
+            foreach ($case in @('npm run start in isolated project', 'PowerShell and Git Bash isolated scripts')) {
+              $name = if ($case.StartsWith('npm')) { 'npm' } else { 'shell' }
+              $report = Join-Path $output "$name-$iteration.json"
+              dotnet run --project tests/LaunchDesk.Tests -c Release --no-build -- --report $report --filter $case
+              $code = $LASTEXITCODE
+              if (!(Test-Path -LiteralPath $report)) { throw 'Case report missing' }
+              $record = @(Get-Content -LiteralPath $report -Raw | ConvertFrom-Json)
+              if ($record.Count -ne 1 -or $record[0].name -ne $case) { throw 'Wrong diagnostic inventory' }
+              $results += @{ iteration=$iteration; case=$case; exitCode=$code; status=$record[0].status; elapsedMs=$record[0].elapsedMs }
+            }
+          }
+          $results | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'summary.json') -Encoding utf8
+          if (@($results | Where-Object { $_.status -ne 'passed' -or $_.exitCode -ne 0 }).Count) { throw 'Interpreter diagnostics contained failures' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: LaunchDesk-interpreter-diagnostics
+          if-no-files-found: error
+          path: artifacts/interpreter-diagnostics/**/*.json

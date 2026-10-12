@@ -823,6 +823,7 @@ await Test("npm run start in isolated project", async () =>
         throw new TimeoutException("npm fixture did not exit: " + probe!.Capture(manager), error);
     }
     Assert(manager.Snapshot(item.Id).ExitCode == 0, "npm exit");
+    _ = probe!.Capture(manager);
     var all = manager.Logs(item.Id).Snapshot(); Assert(string.Concat(all.Where(x => x.Channel == "stdout").Select(x => x.Text)).Contains("npm-ok"), "npm stdout");
     Assert(string.Concat(all.Where(x => x.Channel == "stderr").Select(x => x.Text)).Contains("npm-err"), "npm stderr");
 });
@@ -917,6 +918,7 @@ await Test("PowerShell and Git Bash isolated scripts", async () =>
     try { await Until(() => !manager.Snapshot(item.Id).Active); }
     catch (TimeoutException exception) { throw new TimeoutException("PowerShell fixture: " + probe!.Capture(manager), exception); }
     Assert(manager.Snapshot(item.Id).ExitCode == 0, "PowerShell exit");
+    _ = probe!.Capture(manager);
     Assert(string.Concat(manager.Logs(item.Id).Snapshot().Where(x => x.Channel == "stdout").Select(x => x.Text)) == "ps-中文", "PowerShell text");
     var git = LaunchCommand.Resolve("git.exe", root); var bash = Path.Combine(Directory.GetParent(Path.GetDirectoryName(git)!)!.FullName, "bin", "bash.exe");
     if (!File.Exists(bash)) bash = Path.Combine(Path.GetDirectoryName(git)!, "bash.exe");
@@ -929,6 +931,7 @@ await Test("PowerShell and Git Bash isolated scripts", async () =>
     try { await Until(() => !manager2.Snapshot(shell.Id).Active); }
     catch (TimeoutException exception) { throw new TimeoutException("Git Bash fixture: " + shellProbe!.Capture(manager2), exception); }
     Assert(manager2.Snapshot(shell.Id).ExitCode == 0, "Shell exit");
+    _ = shellProbe!.Capture(manager2);
     Assert(string.Concat(manager2.Logs(shell.Id).Snapshot().Where(x => x.Channel == "stdout").Select(x => x.Text)).Contains("shell-ok"), "Shell text");
 });
 var reportPath = args.Length >= 2 && args[0] == "--report" ? args[1] : Path.Combine(root, "results.json");

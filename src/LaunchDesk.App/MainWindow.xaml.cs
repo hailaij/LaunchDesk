@@ -112,7 +112,6 @@ public partial class MainWindow : Window
     internal ErrorDiagnostics Diagnostics => diagnostics;
     private string? lastRefreshFailure;
     private DateTimeOffset refreshFailureTime;
-    internal string? FaultProbe { get; set; }
     private readonly CancellationTokenSource startupUpdateCancellation = new();
     private ReleaseUpdate? pendingUpdate;
     private long lastRevision = -1;
@@ -199,17 +198,6 @@ public partial class MainWindow : Window
     }
     private async Task LoadWindowAsync()
     {
-        if (FaultProbe is not null)
-        {
-            var item = new LaunchItem { Name = "isolated-fatal-probe", Kind = LaunchKind.Executable, Target = Path.Combine(Environment.SystemDirectory, "cmd.exe"), Arguments = "/d /c ping -t 127.0.0.1", StopTimeoutSeconds = 1 };
-            config.Items.Add(item); await manager.StartAsync(item.Id);
-            File.WriteAllText(smokePath! + ".pid", manager.Snapshot(item.Id).Pid!.Value.ToString());
-            File.WriteAllText(smokePath! + ".diagnostics-path", diagnostics.PathName);
-            var observeDeadline = DateTimeOffset.UtcNow.AddSeconds(8);
-            while (!File.Exists(smokePath! + ".observed") && DateTimeOffset.UtcNow < observeDeadline) await Task.Delay(50);
-            if (FaultProbe == "--ui-fault-dispatcher") { _ = Dispatcher.BeginInvoke(() => throw new InvalidOperationException("Injected dispatcher fault")); return; }
-            throw new InvalidOperationException("Injected loaded fault after await");
-        }
         if (smokePath is not null)
         {
             CreateTray();

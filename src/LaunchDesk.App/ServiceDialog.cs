@@ -10,8 +10,11 @@ public sealed class ServiceDialog : Window
 {
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap };
     private readonly StackPanel actions = new();
-    public ServiceDialog()
+    private readonly Func<ProcessStartInfo, Process?> start;
+    public ServiceDialog() : this(Process.Start) { }
+    internal ServiceDialog(Func<ProcessStartInfo, Process?> startProcess)
     {
+        start = startProcess;
         Title = T("Windows 服务管理"); Width = 560; Height = 450;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         SetResourceReference(IconProperty, "AppIcon");
@@ -45,7 +48,7 @@ public sealed class ServiceDialog : Window
             info.ArgumentList.Add("service"); info.ArgumentList.Add(command);
             if (path is not null) info.ArgumentList.Add(path);
             info.ArgumentList.Add("--interactive");
-            using var helper = Process.Start(info) ?? throw new IOException(T("服务操作失败"));
+            using var helper = start(info) ?? throw new IOException(T("服务操作失败"));
             await helper.WaitForExitAsync();
             if (helper.ExitCode != 0) status.Text = T("服务操作失败"); else await RefreshAsync();
         }
@@ -58,10 +61,12 @@ public sealed class ServiceDialog : Window
         {
             var info = new ProcessStartInfo(Program.HostPath) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
             info.ArgumentList.Add("service"); info.ArgumentList.Add("status");
-            using var helper = Process.Start(info)!;
+            using var helper = start(info) ?? throw new IOException(T("服务操作失败"));
             var output = helper.StandardOutput.ReadToEndAsync(); var error = helper.StandardError.ReadToEndAsync();
-            await helper.WaitForExitAsync(); await error;
-            status.Text = T("服务状态：") + (await output).Trim();
+            await helper.WaitForExitAsync();
+            var stdout = (await output).Trim(); var stderr = (await error).Trim();
+            status.Text = helper.ExitCode == 0 ? T("服务状态：") + stdout :
+                T("服务操作失败") + $" ({helper.ExitCode})\n" + (stderr.Length > 0 ? stderr : stdout);
         }
         catch (Exception error) { status.Text = ErrorText(error.Message); }
     }

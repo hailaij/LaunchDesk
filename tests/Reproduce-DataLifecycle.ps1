@@ -1,4 +1,4 @@
-param([string]$OutputDirectory = 'artifacts/verification/data-lifecycle-repro/verified')
+param([string]$OutputDirectory = 'artifacts/verification/data-lifecycle-repro/verified', [switch]$ManagerOnly)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $output = [IO.Path]::GetFullPath($OutputDirectory, $root)
@@ -10,7 +10,7 @@ $start = $source.IndexOf($startMarker, $source.IndexOf('private async void Setti
 $end = $source.IndexOf($endMarker, $start)
 if ($start -lt 0 -or $end -lt 0) { throw 'Settings block boundaries changed; review reproduction harness.' }
 $block = $source.Substring($start, $end - $start).
-    Replace('manager = new(config, store.Root, Program.SignalAsync)', 'manager = NewManager()').
+    Replace('manager = CreateManager()', 'manager = NewManager()').
     Replace('AppContext.BaseDirectory', 'BasePath').Replace('DataLocation.Save(destinationRoot)', 'SaveLocator(destinationRoot)')
 $harness = (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'LaunchDesk.DataRepros/SettingsHarness.cs') -Raw).Replace("`r`n", "`n")
 if (-not $harness.Contains($block)) { throw 'Settings harness drifted from production control flow.' }
@@ -28,8 +28,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Repro locked restore failed.' }
     dotnet build tests/LaunchDesk.DataRepros -c Release --no-restore -warnaserror
     if ($LASTEXITCODE -ne 0) { throw 'Repro build failed.' }
-    dotnet run --project tests/LaunchDesk.DataRepros -c Release --no-build -- $output
+    $arguments = @('run', '--project', 'tests/LaunchDesk.DataRepros', '-c', 'Release', '--no-build', '--', $output)
+    if ($ManagerOnly) { $arguments += '--manager-only' }
+    & dotnet @arguments
     if ($LASTEXITCODE -ne 0) { throw 'Reproduction verification failed; inspect results.json.' }
     $results = (Get-Content -LiteralPath (Join-Path $output 'results.json') -Raw | ConvertFrom-Json).results
-    if ($results.Count -ne 6 -or @($results | Where-Object verification -ne 'passed').Count) { throw 'Incomplete reproduction evidence.' }
+    $expected = if ($ManagerOnly) { 1 } else { 6 }
+    if ($results.Count -ne $expected -or @($results | Where-Object verification -ne 'passed').Count) { throw 'Incomplete reproduction evidence.' }
 } finally { Pop-Location }

@@ -16,6 +16,12 @@ function Reject([scriptblock]$Action) {
     if (-not $rejected) { throw 'Expected rejection did not happen' }
 }
 try {
+    Check 'Production assembly excludes fault probes and test-host fixture is rejected' {
+        & $checker --production-boundary (Join-Path $project 'src/LaunchDesk.App/bin/Release/net10.0-windows/LaunchDesk.dll') ''
+        if ($LASTEXITCODE -ne 0) { throw 'Production fault probe check failed' }
+        & $checker --production-boundary (Join-Path $project 'tests/LaunchDesk.UiChecks/bin/Release/net10.0-windows/LaunchDesk.UiChecks.dll') '' 2>$null
+        if ($LASTEXITCODE -ne 1) { throw 'Fault probe fixture was accepted as production' }
+    }
     Check 'Packaging refuses stale payload without modifying it' {
         $directory = Join-Path $output ('stale-package-' + [guid]::NewGuid().ToString('N'))
         $payload = Join-Path $directory 'LaunchDesk-win-x64'
@@ -56,6 +62,14 @@ try {
         $tests = @(Get-Content -LiteralPath $report -Raw | ConvertFrom-Json)
         if ($tests.Count -ne 4 -or @($tests | Where-Object status -eq 'skipped').Count -ne 3 -or @($tests | Where-Object status -eq 'passed').Count -ne 1) { throw 'Signing result inventory incorrect' }
         & (Join-Path $PSScriptRoot 'Assert-TestReport.ps1') -Path $report -ExpectedCount 4
+        Check 'Test provenance rejects missing metadata and tampered reports' {
+            $copied = Join-Path $output 'tampered-report.json'
+            Copy-Item -LiteralPath $report -Destination $copied
+            Reject { & (Join-Path $PSScriptRoot 'Assert-TestReport.ps1') -Path $copied -ExpectedCount 4 }
+            Copy-Item -LiteralPath ($report + '.metadata.json') -Destination ($copied + '.metadata.json')
+            [IO.File]::AppendAllText($copied, ' ')
+            Reject { & (Join-Path $PSScriptRoot 'Assert-TestReport.ps1') -Path $copied -ExpectedCount 4 }
+        }
         Reject { & (Join-Path $PSScriptRoot 'Assert-TestReport.ps1') -Path $report -ExpectedCount 4 -RequireNoSkips }
     }
     Check 'Broken fixture is failed, not skipped or passed' {

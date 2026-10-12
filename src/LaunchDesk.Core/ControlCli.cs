@@ -9,9 +9,16 @@ public static class ControlCli
         Func<ControlRequest, TimeSpan, Task<ControlResponse>>? send = null)
     {
         if (args.Length == 0 || args is ["--help"] or ["-h"]) { await output.WriteLineAsync(Usage); return 0; }
+        var json = args.Contains("--json", StringComparer.Ordinal);
+        async Task<int> FailAsync(int code, string message)
+        {
+            if (json) await output.WriteLineAsync(JsonSerializer.Serialize(new ControlResponse(false, message, []), ConfigurationStore.JsonOptions));
+            else await errorOutput.WriteLineAsync(message);
+            return code;
+        }
         try
         {
-            var command = args[0]; string? target = null; var all = false; var json = false; var timeout = 120;
+            var command = args[0]; string? target = null; var all = false; var timeout = 120;
             for (var i = 1; i < args.Length; i++)
                 switch (args[i])
                 {
@@ -37,10 +44,10 @@ public static class ControlCli
             return response.Success ? 0 : 1;
         }
         catch (Exception error) when (error is ArgumentException or InvalidDataException)
-        { await errorOutput.WriteLineAsync(error.Message + "\n" + Usage); return 2; }
+        { return await FailAsync(2, error.Message + "\n" + Usage); }
         catch (OperationCanceledException)
-        { await errorOutput.WriteLineAsync("Command timed out; it may still be running. Use status before retrying."); return 4; }
+        { return await FailAsync(4, "Command timed out; it may still be running. Use status before retrying."); }
         catch (Exception error)
-        { await errorOutput.WriteLineAsync(error.Message); return 3; }
+        { return await FailAsync(3, error.Message); }
     }
 }

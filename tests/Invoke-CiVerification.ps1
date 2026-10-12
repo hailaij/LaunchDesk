@@ -22,6 +22,7 @@ try {
     & (Join-Path $PSScriptRoot 'Verify-Engineering.ps1') -OutputDirectory (Join-Path $output 'engineering-contracts')
     Write-Host 'CI verification: running UI and fatal-cleanup checks'
     & (Join-Path $PSScriptRoot 'Verify-Ui.ps1') -OutputDirectory (Join-Path $output 'ui')
+    & (Join-Path $PSScriptRoot 'Reproduce-DataLifecycle.ps1') -ManagerOnly -OutputDirectory (Join-Path $output 'manager-switch')
 }
 finally {
     Write-Host 'CI verification: cleaning temporary certificate and key'

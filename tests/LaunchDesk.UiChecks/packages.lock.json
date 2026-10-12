@@ -2,16 +2,25 @@
   "version": 1,
   "dependencies": {
     "net10.0-windows7.0": {
+      "System.ServiceProcess.ServiceController": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "PaFmFQXX/qL1vl0CfdJUMPMYT8TOEHlcdEiOZtd4LV2rcaS/WDQM4bpECcbRM4BrD+DWkWd/jtb6iPOqAX9TWA=="
+      },
       "LaunchDesk": {
         "type": "Project",
         "dependencies": {
-          "LaunchDesk.Core": "[0.7.1, )"
+          "LaunchDesk.Core": "[0.8.0, )"
         }
       },
       "launchdesk.core": {
+        "type": "Project"
+      },
+      "launchdesk.host": {
         "type": "Project",
         "dependencies": {
-          "System.IO.Pipes.AccessControl": "[10.0.0, )"
+          "LaunchDesk.Core": "[0.8.0, )",
+          "System.ServiceProcess.ServiceController": "[10.0.0, )"
         }
       }
     }

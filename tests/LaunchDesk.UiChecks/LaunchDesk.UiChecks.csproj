@@ -8,6 +8,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup><Resource Include="../../src/LaunchDesk.App/Assets/LaunchDesk.ico" Link="Assets/LaunchDesk.ico" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../../src/LaunchDesk.Host/LaunchDesk.Host.csproj" /></ItemGroup>
   <ItemGroup Condition="'$(AppBinaryDirectory)' == ''">
     <ProjectReference Include="../../src/LaunchDesk.App/LaunchDesk.App.csproj" />
   </ItemGroup>

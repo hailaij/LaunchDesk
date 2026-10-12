@@ -154,6 +154,7 @@ if (args.Length > 0 && args[0] != "--report")
 var root = Path.Combine(Path.GetTempPath(), "LaunchDesk-tests-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 var results = new List<TestResult>();
+var startedAt = DateTimeOffset.UtcNow;
 var filterIndex = Array.IndexOf(args, "--filter");
 var filter = filterIndex >= 0 && filterIndex + 1 < args.Length ? args[filterIndex + 1] : null;
 void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
@@ -849,6 +850,7 @@ await Test("PowerShell and Git Bash isolated scripts", async () =>
 var reportPath = args.Length >= 2 && args[0] == "--report" ? args[1] : Path.Combine(root, "results.json");
 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(reportPath))!);
 await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
+await TestEvidence.WriteAsync(reportPath, startedAt, filter);
 Console.WriteLine("Evidence: " + root);
 Console.WriteLine($"Summary: {results.Count(x => x.status == "passed")} passed, {results.Count(x => x.status == "failed")} failed, {results.Count(x => x.status == "skipped")} skipped");
 return results.Count == 0 ? 2 : results.Any(x => x.status == "failed") || (args.Contains("--fail-on-skip") && results.Any(x => x.status == "skipped")) ? 1 : 0;

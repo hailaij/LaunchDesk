@@ -169,13 +169,13 @@ dotnet publish src/LaunchDesk.App -c Release -r win-x64 --self-contained true -o
 界面测试生成 WPF 实际布局的 PNG，覆盖标准和最小窗口尺寸、编辑窗口、设置窗口。已有三个真实服务的验收由用户暂缓，未启动或停止它们；隔离测试不代表已完成这些具体服务的实测。
 
 ```powershell
-artifacts/LaunchDesk-win-x64/LaunchDesk.exe --ui-smoke artifacts/ui.png
-artifacts/LaunchDesk-win-x64/LaunchDesk.exe --ui-smoke-min artifacts/ui-minimum.png
+tests/LaunchDesk.UiChecks/bin/Release/net10.0-windows/LaunchDesk.UiChecks.exe --ui-smoke artifacts/ui.png
+tests/LaunchDesk.UiChecks/bin/Release/net10.0-windows/LaunchDesk.UiChecks.exe --ui-smoke-min artifacts/ui-minimum.png
 ```
 
-`--ui-smoke` 使用独立测试数据目录，截图中的启动项不会执行。GitHub Actions 还会验证签名样本、双语截图像素、虚拟化、异常恢复与进程清理，并上传真实报告。
+独立测试宿主的 `--ui-smoke` 使用隔离数据目录，截图中的启动项不会执行。生产程序拒绝全部 `--ui-*` 测试参数。GitHub Actions 还会验证签名样本、双语截图像素、虚拟化、异常恢复与进程清理，并上传报告及来源元数据，详见 [测试证据与故障隔离](docs/test-evidence-and-fault-isolation.md)。
 
-当前主测试清单为 104 组；无签名样本时 3 组明确跳过。CI 的 `--fail-on-skip` 拒绝任何跳过，历史报告见 [测试证据](docs/test-summary.md)。开发电脑可运行 `./tests/Verify-Ui.ps1` 和 `./tests/Verify-Engineering.ps1`；CI 自签证书脚本仅允许临时 GitHub-hosted runner。当前提交、CI 与构建资产验收见 v0.8.0 Release 及 [本版复查](docs/release-v0.8.0.md)。重复打包须使用新的输出目录，非空发布目录会被拒绝。
+当前源码主测试清单为 105 组；无签名样本时 3 组明确跳过。CI 的 `--fail-on-skip` 拒绝任何跳过，历史报告见 [测试证据](docs/test-summary.md)。开发电脑可运行 `./tests/Verify-Ui.ps1` 和 `./tests/Verify-Engineering.ps1`；CI 自签证书脚本仅允许临时 GitHub-hosted runner。已发布 v0.8.0 的 104 组验证及资产验收见 Release 和 [本版复查](docs/release-v0.8.0.md)，后续未发布修复见 [管理器、服务诊断与 CLI JSON 复现](docs/v0.8-review-manager-service-cli.md)。重复打包须使用新的输出目录，非空发布目录会被拒绝。
 
 ## 贡献
 

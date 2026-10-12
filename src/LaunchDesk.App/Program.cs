@@ -20,13 +20,14 @@ public static class Program
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         if (args.Length == 2 && args[0] == "--signal" && int.TryParse(args[1], out var pid))
         { var sent = NativeProcess.SendControlSignal(pid, out var detail); if (!sent) Console.Error.WriteLine(detail); Thread.Sleep(100); return sent ? 0 : 1; }
-        var smoke = args.Length == 2 && args[0] is "--ui-smoke" or "--ui-smoke-min" or "--ui-smoke-en" or "--ui-smoke-en-min" or "--ui-fault-loaded" or "--ui-fault-dispatcher";
-        var name = "Local\\LaunchDesk-" + WindowsIdentity.GetCurrent().User!.Value + (smoke ? "-smoke-" + Guid.NewGuid() : "");
+        if (args.Any(x => x.StartsWith("--ui-", StringComparison.Ordinal))) return 2;
+        using var identity = WindowsIdentity.GetCurrent();
+        var name = "Local\\LaunchDesk-" + identity.User!.Value;
         using var mutex = new Mutex(true, name, out var created);
         // Installers must not replace files while the application owns managed processes.
-        using var installerGuard = smoke ? null : new Mutex(false, "Local\\LaunchDesk-InstallerGuard");
+        using var installerGuard = new Mutex(false, "Local\\LaunchDesk-InstallerGuard");
         using var activate = new EventWaitHandle(false, EventResetMode.AutoReset, name + "-activate");
-        if (!created && !smoke)
+        if (!created)
         {
             var currentVersion = typeof(App).Assembly.GetName().Version!.ToString(3);
             foreach (var process in Process.GetProcessesByName("LaunchDesk"))
@@ -54,8 +55,7 @@ public static class Program
         {
             var basePath = AppContext.BaseDirectory;
             var portable = File.Exists(Path.Combine(basePath, "portable.flag"));
-            var root = smoke ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[1]))!, "ui-smoke-data", Guid.NewGuid().ToString("N"))
-                : DataLocation.Resolve(basePath, portable);
+            var root = DataLocation.Resolve(basePath, portable);
             var store = new ConfigurationStore(root);
             Configuration config;
             try { config = store.Load(); }
@@ -64,23 +64,19 @@ public static class Program
                 MessageBox.Show("配置读取失败，原文件已保留。请恢复备份或修正配置后重试。\n" + error.Message, "LaunchDesk", MessageBoxButton.OK, MessageBoxImage.Error);
                 return 1;
             }
-            if (smoke && args[0].Contains("-en")) config.Preferences.Language = "en-US";
             if (store.RecoveredFrom is not null)
             {
                 UiText.Apply(config.Preferences.Language);
                 MessageBox.Show(UiText.F("已从备份恢复配置：{0}\n损坏原件已保留：{1}\n本次启动不会自动启动任何启动项，请检查恢复内容。", store.RecoveredFrom, store.CorruptArchive ?? ""), "LaunchDesk", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
-            var window = new MainWindow(store, config, portable, smoke ? args[1] : null, args.Contains("--autostart"));
+            var window = new MainWindow(store, config, portable, null, args.Contains("--autostart"));
             app.ConfigureErrors(new ErrorDiagnostics(root), window);
-            if (smoke && args[0].StartsWith("--ui-fault-")) window.FaultProbe = args[0];
-            if (smoke && args[0].EndsWith("-min")) { window.Width = 940; window.Height = 640; }
             var registration = ThreadPool.RegisterWaitForSingleObject(activate, (_, _) => app.Dispatcher.BeginInvoke(window.Restore), null, -1, false);
             try { return app.Run(window); } finally { registration.Unregister(null); }
         }
         catch (Exception error)
         {
-            if (smoke) File.WriteAllText(Path.GetFullPath(args[1]) + ".error.txt", error.ToString());
-            else MessageBox.Show(error.ToString(), "LaunchDesk 启动失败", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(error.ToString(), "LaunchDesk 启动失败", MessageBoxButton.OK, MessageBoxImage.Error);
             return 1;
         }
         finally { if (created) mutex.ReleaseMutex(); }

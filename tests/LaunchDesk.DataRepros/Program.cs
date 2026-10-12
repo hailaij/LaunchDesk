@@ -48,12 +48,34 @@ await Check("D-1: original settings control flow, migration and locator failures
             Require(harness.LocatorAttempted == !failCopy, "copy rethrow prevents entering locator branch");
             evidence.Add(new { failCopy, managersCreated = harness.Managers.Count, maintenanceTasksStillActive = active,
                 harness.LocatorAttempted, error = fault!.Message, conclusion = "reported double replacement not reproduced" });
+            for (var repeat = 0; repeat < 3; repeat++)
+            {
+                try { await harness.ApplyAsync(); } catch (Exception error) when (error is IOException or InvalidOperationException or UnauthorizedAccessException) { }
+                Require(harness.Managers.Count(x => !SettingsHarness.Maintenance(x).IsCompleted) == 1,
+                    "repeated failed migration leaked a maintenance task");
+            }
         }
         finally { foreach (var manager in harness.Managers) await manager.DisposeAsync(); }
         Require(harness.Managers.All(x => SettingsHarness.Maintenance(x).IsCompleted), "all test managers released");
     }
+    var success = new SettingsHarness(Path.Combine(root, "manager-success"));
+    try
+    {
+        await success.ApplyAsync();
+        Require(success.Managers.Count == 2 && success.Managers.Count(x => !SettingsHarness.Maintenance(x).IsCompleted) == 1,
+            "successful migration retained old manager");
+        evidence.Add(new { success = true, managersCreated = success.Managers.Count, maintenanceTasksStillActive = 1 });
+    }
+    finally { foreach (var manager in success.Managers) await manager.DisposeAsync(); }
+    Require(success.Managers.All(x => SettingsHarness.Maintenance(x).IsCompleted), "successful migration managers not released");
     return evidence;
 });
+if (args.Contains("--manager-only", StringComparer.Ordinal))
+{
+    await File.WriteAllTextAsync(Path.Combine(output, "results.json"), JsonSerializer.Serialize(new { generatedAt = DateTimeOffset.UtcNow, root,
+        scope = "Current source-guarded settings transaction, repeated copy/locator failures; no real dialog, registry or user locator", results }, new JsonSerializerOptions { WriteIndented = true }));
+    return results.Any(x => JsonSerializer.SerializeToElement(x).GetProperty("verification").GetString() == "failed") ? 1 : 0;
+}
 await Check("D-10a: failed copy retains staging but preserves source and destination", () =>
 {
     var sandbox = Path.Combine(root, "copy-failure"); var store = new ConfigurationStore(Path.Combine(sandbox, "source"));

@@ -11,7 +11,11 @@ internal static class UiChecks
     public static int Main(string[] args)
     {
         System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
-        if (args.Length != 2 || args[0] is not ("--timer" or "--loaded" or "--control" or "--recovery-accept" or "--recovery-accept-en" or "--recovery-skip" or "--accessibility" or "--accessibility-en")) return 2;
+        if (args.Length == 2 && args[0] == "--signal" && int.TryParse(args[1], out var pid))
+        { var sent = NativeProcess.SendControlSignal(pid, out var detail); if (!sent) Console.Error.WriteLine(detail); Thread.Sleep(100); return sent ? 0 : 1; }
+        if (args.Length == 2 && args[0] is "--ui-fault-loaded" or "--ui-fault-dispatcher" or "--ui-smoke" or "--ui-smoke-min" or "--ui-smoke-en" or "--ui-smoke-en-min")
+            return FaultProbe.Run(args[0], Path.GetFullPath(args[1]));
+        if (args.Length != 2 || args[0] is not ("--timer" or "--loaded" or "--control" or "--recovery-accept" or "--recovery-accept-en" or "--recovery-skip" or "--accessibility" or "--accessibility-en" or "--service-diagnostics")) return 2;
         var report = Path.GetFullPath(args[1]); Directory.CreateDirectory(Path.GetDirectoryName(report)!);
         var root = Path.Combine(Path.GetTempPath(), "LaunchDesk-ui-check-" + Guid.NewGuid().ToString("N"));
         var store = new ConfigurationStore(root);
@@ -50,6 +54,64 @@ internal static class UiChecks
         var window = new MainWindow(store, config, false, loaded ? report + ".png" : null, false, pipe);
         var escaped = false;
         app.DispatcherUnhandledException += (_, e) => { escaped = true; e.Handled = true; app.Shutdown(1); };
+        if (args[0] == "--service-diagnostics")
+        {
+            var failures = new List<string>();
+            window.Loaded += async (_, _) =>
+            {
+                try
+                {
+                    foreach (var scenario in new[] { (0, "Running", ""), (7, "", "isolated service failure"), (8, "fallback detail", ""), (9, "", "") })
+                    {
+                        Func<System.Diagnostics.ProcessStartInfo, System.Diagnostics.Process?> start = info =>
+                        {
+                            if (info.UseShellExecute || !info.RedirectStandardError || !info.RedirectStandardOutput)
+                                throw new InvalidDataException("Status query unexpectedly requested elevation");
+                            info.FileName = Path.Combine(Environment.SystemDirectory, "cmd.exe"); info.ArgumentList.Clear();
+                            info.ArgumentList.Add("/d"); info.ArgumentList.Add("/c");
+                            info.ArgumentList.Add($"{(scenario.Item2.Length > 0 ? "echo " + scenario.Item2 + "&" : "")}{(scenario.Item3.Length > 0 ? "echo " + scenario.Item3 + " 1>&2&" : "")}exit /b {scenario.Item1}");
+                            return System.Diagnostics.Process.Start(info);
+                        };
+                        var dialog = (ServiceDialog)Activator.CreateInstance(typeof(ServiceDialog), BindingFlags.Instance | BindingFlags.NonPublic,
+                            null, [start], null)!;
+                        await (Task)typeof(ServiceDialog).GetMethod("RefreshAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(dialog, null)!;
+                        var text = ((System.Windows.Controls.TextBlock)typeof(ServiceDialog).GetField("status", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(dialog)!).Text;
+                        var expected = scenario.Item3.Length > 0 ? scenario.Item3 : scenario.Item2;
+                        if (!text.Contains(expected, StringComparison.Ordinal)) failures.Add("Service status discarded detail: " + expected + "; actual=" + text);
+                        if (scenario.Item1 != 0 && !text.Contains($"({scenario.Item1})", StringComparison.Ordinal)) failures.Add("Service status lost failure exit code");
+                    }
+                    foreach (var policy in new[] { false, true })
+                    {
+                        var serviceRoot = Path.Combine(root, policy ? "service-policy" : "service-load");
+                        Directory.CreateDirectory(serviceRoot);
+                        if (policy) new ConfigurationStore(serviceRoot).Save(new() { Items = [new() { Target = "echo unused", ShowWindow = true }] });
+                        else File.WriteAllText(Path.Combine(serviceRoot, "config.json"), "{broken");
+                        var type = Assembly.Load("LaunchDesk.Host").GetType("LaunchDesk.Host.ManagedService", true)!;
+                        using var service = (IDisposable)Activator.CreateInstance(type, BindingFlags.Instance | BindingFlags.NonPublic, null, [serviceRoot], null)!;
+                        Exception? original = null;
+                        try { type.GetMethod("OnStart", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(service, [Array.Empty<string>()]); }
+                        catch (TargetInvocationException error) { original = error.InnerException; }
+                        var path = new ErrorDiagnostics(serviceRoot).PathName;
+                        if (original is null || !File.Exists(path) || !File.ReadAllText(path).Contains(original.Message, StringComparison.Ordinal))
+                            failures.Add("Synchronous service startup missing original diagnostics: policy=" + policy);
+                        if ((int)type.GetProperty("ExitCode")!.GetValue(service)! != 1) failures.Add("Service startup failure exit code lost");
+                    }
+                    var blockedRoot = Path.Combine(root, "service-blocked-diagnostics");
+                    Directory.CreateDirectory(blockedRoot); File.WriteAllText(Path.Combine(blockedRoot, "diagnostics"), "blocked");
+                    new ConfigurationStore(blockedRoot).Save(new() { Items = [new() { Target = "echo unused", ShowWindow = true }] });
+                    var blockedType = Assembly.Load("LaunchDesk.Host").GetType("LaunchDesk.Host.ManagedService", true)!;
+                    using var blockedService = (IDisposable)Activator.CreateInstance(blockedType, BindingFlags.Instance | BindingFlags.NonPublic, null, [blockedRoot], null)!;
+                    try { blockedType.GetMethod("OnStart", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(blockedService, [Array.Empty<string>()]); failures.Add("Policy failure was swallowed"); }
+                    catch (TargetInvocationException error) when (error.InnerException is InvalidDataException) { }
+                }
+                catch (Exception error) { failures.Add(error.ToString()); }
+                finally { await (Task)typeof(MainWindow).GetMethod("ExitAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [failures.Count == 0 ? 0 : 1, null])!; }
+            };
+            var exit = app.Run(window);
+            File.WriteAllText(report, JsonSerializer.Serialize(new { passed = failures.Count == 0, failures, cleanExit = exit == 0, root,
+                scope = "Injected non-elevated status process and isolated OnStart failures; no SCM registration or UAC" }));
+            return failures.Count == 0 && exit == 0 ? 0 : 1;
+        }
         if (args[0].StartsWith("--accessibility", StringComparison.Ordinal))
         {
             var accessibilityProbe = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };

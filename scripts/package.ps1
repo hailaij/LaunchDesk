@@ -20,6 +20,9 @@ dotnet build (Join-Path $projectRoot 'tools/LaunchDesk.ReleaseChecks/LaunchDesk.
 if ($LASTEXITCODE -ne 0) { throw 'Release verification tool build failed.' }
 & (Join-Path $projectRoot 'tools/LaunchDesk.ReleaseChecks/bin/Release/net10.0-windows/LaunchDesk.ReleaseChecks.exe') --embedded-pin (Join-Path $stageRoot 'LaunchDesk.Core.dll') $UpdateSignerSha256
 if ($LASTEXITCODE -ne 0) { throw 'Published assembly publisher pin mismatch.' }
+& (Join-Path $projectRoot 'tools/LaunchDesk.ReleaseChecks/bin/Release/net10.0-windows/LaunchDesk.ReleaseChecks.exe') --production-boundary (Join-Path $stageRoot 'LaunchDesk.dll') ''
+if ($LASTEXITCODE -ne 0) { throw 'Production fault-injection boundary failed.' }
+if (@(Get-ChildItem -LiteralPath $stageRoot -Recurse -File | Where-Object { $_.Name -match '^LaunchDesk\.(UiChecks|Tests|DataRepros)\.' }).Count) { throw 'Test host must not enter production payload.' }
 foreach ($file in 'LICENSE', 'THIRD-PARTY-NOTICES.md', 'PRIVACY.md') {
     Copy-Item -LiteralPath (Join-Path $projectRoot $file) -Destination $stageRoot
 }

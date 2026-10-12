@@ -42,6 +42,25 @@ internal static class ProductChecks
             Check(await ControlCli.RunAsync(["list"], output, error, (_, _) => throw new OperationCanceledException()) == 4, "timeout code");
             Check(await ControlCli.RunAsync(["--help"], output, error, Send) == 0 && calls == 1, "help contacted server");
         });
+        await test("Product: CLI JSON failures remain machine-readable", async () =>
+        {
+            foreach (var expected in new[] { 1, 2, 3, 4 })
+            {
+                using var output = new StringWriter(); using var error = new StringWriter();
+                var code = await ControlCli.RunAsync(expected == 2 ? ["start", "--bad", "--json"] : ["list", "--json"], output, error,
+                    (_, _) => expected switch
+                    {
+                        1 => Task.FromResult(new ControlResponse(false, "server rejected", [])),
+                        3 => throw new IOException("offline"),
+                        4 => throw new OperationCanceledException(),
+                        _ => throw new Exception("Invalid arguments contacted server")
+                    });
+                Check(code == expected, "JSON changed exit code");
+                var response = JsonSerializer.Deserialize<ControlResponse>(output.ToString(), ConfigurationStore.JsonOptions);
+                Check(response is { Success: false, Version: 1, Items.Length: 0 } && !string.IsNullOrWhiteSpace(response.Message), "Failure JSON lost schema/details");
+                Check(error.ToString().Length == 0, "JSON mode wrote non-JSON diagnostics");
+            }
+        });
         await test("Product: CLI validation unique names IDs and status", async () =>
         {
             var a = worker("--worker sleep"); a.Name = "带 空格"; var b = worker("--worker sleep"); b.Name = a.Name;

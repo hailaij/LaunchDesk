@@ -167,22 +167,33 @@ internal static class Program
 
 internal sealed class ManagedService : ServiceBase
 {
+    private readonly string dataRoot;
     private ProcessManager? manager;
     private Task? startup;
     private readonly CancellationTokenSource stopping = new();
-    public ManagedService() { ServiceName = Program.ServiceName; AutoLog = false; CanStop = true; CanShutdown = true; }
+    public ManagedService() : this(Program.DataRoot) { }
+    internal ManagedService(string root) { dataRoot = root; ServiceName = Program.ServiceName; AutoLog = false; CanStop = true; CanShutdown = true; }
     protected override void OnStart(string[] args)
     {
-        var configuration = new ConfigurationStore(Program.DataRoot).Load();
-        ServicePolicy.Validate(configuration);
-        manager = new ProcessManager(configuration, Program.DataRoot, Program.SignalAsync);
-        startup = StartAsync();
+        try
+        {
+            var configuration = new ConfigurationStore(dataRoot).Load();
+            ServicePolicy.Validate(configuration);
+            manager = new ProcessManager(configuration, dataRoot, Program.SignalAsync);
+            startup = StartAsync();
+        }
+        catch (Exception error)
+        {
+            new ErrorDiagnostics(dataRoot).Write("service-start", error);
+            ExitCode = 1;
+            throw;
+        }
     }
     private async Task StartAsync()
     {
         try { await manager!.StartAllAsync(cancellationToken: stopping.Token); }
         catch (OperationCanceledException) when (stopping.IsCancellationRequested) { }
-        catch (Exception error) { new ErrorDiagnostics(Program.DataRoot).Write("service-start", error); ExitCode = 1; _ = Task.Run(Stop); }
+        catch (Exception error) { new ErrorDiagnostics(dataRoot).Write("service-start", error); ExitCode = 1; _ = Task.Run(Stop); }
     }
     protected override void OnStop()
     {
@@ -199,6 +210,6 @@ internal sealed class ManagedService : ServiceBase
         // SCM shutdown is not a pending Stop callback, so RequestAdditionalTime is not valid here.
         var cleanup = CleanupAsync();
         if (!cleanup.Wait(TimeSpan.FromSeconds(15)))
-            new ErrorDiagnostics(Program.DataRoot).Write("service-shutdown", new System.TimeoutException("Shutdown cleanup is still pending; Windows owns the remaining shutdown deadline."));
+            new ErrorDiagnostics(dataRoot).Write("service-shutdown", new System.TimeoutException("Shutdown cleanup is still pending; Windows owns the remaining shutdown deadline."));
     }
 }

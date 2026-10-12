@@ -10,6 +10,8 @@ internal sealed class SettingsHarness
     private ConfigurationStore store;
     private ProcessManager manager = null!;
     private bool portable;
+    private bool configurationChanging { get; set; }
+    private SessionJournal? session;
     private ErrorDiagnostics diagnostics;
     private bool IsEnabled { get; set; } = true;
     private string BasePath { get; }
@@ -24,7 +26,7 @@ internal sealed class SettingsHarness
         diagnostics = new(store.Root); manager = NewManager();
     }
     private ProcessManager NewManager()
-    { var result = new ProcessManager(config, store.Root); Managers.Add(result); return result; }
+    { var result = new ProcessManager(config, store.Root) { Session = session }; Managers.Add(result); return result; }
     private void SaveLocator(string root)
     { LocatorAttempted = true; DataLocation.Save(root, Locator); }
     public static Task Maintenance(ProcessManager manager) =>
@@ -41,7 +43,7 @@ internal sealed class SettingsHarness
                 var targetStore = store;
                 if (changingRoot)
                 {
-                    IsEnabled = false;
+                    IsEnabled = false; configurationChanging = true;
                     try
                     {
                         await manager.DisposeAsync();
@@ -62,7 +64,13 @@ internal sealed class SettingsHarness
                 }
                 catch { if (changingRoot) manager = NewManager(); throw; }
                 store = targetStore; portable = dialog.Portable; diagnostics = new(store.Root);
-                if (changingRoot) manager = NewManager();
+                if (changingRoot)
+                {
+                    var oldSession = session;
+                    session = new(store.Root);
+                    manager = NewManager();
+                    session.Begin(); oldSession?.MarkClean();
+                }
             }
             catch { config.Preferences.Language = previous.Language; config.Preferences.Theme = previous.Theme; config.Preferences.StartAtLogin = previous.StartAtLogin; config.Preferences.StartMinimized = previous.StartMinimized;
                 config.Preferences.MinimizeToTray = previous.MinimizeToTray; config.Preferences.LogDays = previous.LogDays; config.Preferences.LogLimitMiB = previous.LogLimitMiB;

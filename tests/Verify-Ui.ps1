@@ -4,8 +4,9 @@ Add-Type -AssemblyName System.Drawing
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $output -Force | Out-Null
 $exe = (Resolve-Path -LiteralPath $AppPath).Path
+$uiHost = (Resolve-Path -LiteralPath 'tests/LaunchDesk.UiChecks/bin/Release/net10.0-windows/LaunchDesk.UiChecks.exe').Path
 function Run-App([string]$Mode, [string]$Report) {
-    $process = Start-Process -FilePath $exe -ArgumentList @($Mode, ('"' + $Report + '"')) -PassThru
+    $process = Start-Process -FilePath $uiHost -ArgumentList @($Mode, ('"' + $Report + '"')) -WindowStyle Hidden -PassThru
     try {
         if (-not $process.WaitForExit(120000)) { throw "UI smoke timed out: $Mode" }
         if ($process.ExitCode -ne 0) { throw "UI smoke failed: $Mode, exit $($process.ExitCode)" }
@@ -29,10 +30,11 @@ foreach ($mode in @('--ui-smoke', '--ui-smoke-en-min')) {
     & (Join-Path $PSScriptRoot 'Assert-LogPerformance.ps1') -ScreenshotPath $path
 }
 & (Join-Path $PSScriptRoot 'Verify-LogPerformanceContracts.ps1') -ScreenshotPath (Join-Path $output 'ui-smoke.png') -OutputDirectory (Join-Path $output 'performance-contracts')
-foreach ($mode in @('--timer', '--loaded', '--control', '--recovery-accept', '--recovery-accept-en', '--recovery-skip', '--accessibility', '--accessibility-en')) {
+foreach ($mode in @('--timer', '--loaded', '--control', '--recovery-accept', '--recovery-accept-en', '--recovery-skip', '--accessibility', '--accessibility-en', '--service-diagnostics')) {
     dotnet run --project tests/LaunchDesk.UiChecks -c Release --no-build -- $mode (Join-Path $output ($mode.TrimStart('-') + '.json'))
     if ($LASTEXITCODE -ne 0) { throw "UI host failed: $mode" }
     $result = Get-Content -LiteralPath (Join-Path $output ($mode.TrimStart('-') + '.json')) -Raw | ConvertFrom-Json
+    if ($mode -eq '--service-diagnostics' -and (-not $result.passed -or -not $result.cleanExit)) { throw 'Service diagnostics verification failed' }
     if ($mode.StartsWith('--accessibility') -and (-not $result.passed -or -not $result.cleanExit)) { throw "Accessibility verification failed: $mode" }
     if ($mode -in @('--timer', '--loaded') -and -not $result.diagnosticsWritten) { throw "Missing UI diagnostics: $mode" }
     if ($mode -in @('--control', '--recovery-accept', '--recovery-accept-en', '--recovery-skip') -and (-not $result.passed -or -not $result.cleanExit)) { throw "Product UI verification failed: $mode" }

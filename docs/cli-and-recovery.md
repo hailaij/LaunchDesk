@@ -24,6 +24,10 @@ duplicated or the name starts with `--`. Targets are individual items, not folde
 names. `list` and unqualified `status` return all items, including health status.
 `--json` returns the versioned response structure with `Success`, `Message` and
 `Items`. Arguments and command contents are not exposed in these responses.
+The unpublished post-v0.8.0 repair also returns this JSON schema on stdout for
+invalid arguments, transport failures and timeouts when `--json` is present.
+These failures retain their existing exit codes; non-JSON errors use stderr.
+Exact help requests remain plain text. See [reproduction evidence](https://github.com/hailaij/LaunchDesk/blob/main/docs/v0.8-review-manager-service-cli.md).
 `--all` follows configured priorities and dependencies; stop uses the existing
 graceful stop/input/timeout logic. It is not limited to auto-start items.
 

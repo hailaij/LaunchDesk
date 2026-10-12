@@ -1,11 +1,20 @@
 param(
     [string]$AppPath = 'src/LaunchDesk.App/bin/Release/net10.0-windows/LaunchDesk.exe',
+    [string]$HostPath = 'tests/LaunchDesk.UiChecks/bin/Release/net10.0-windows/LaunchDesk.UiChecks.exe',
     [string]$OutputDirectory = 'artifacts/verification/correctness/fatal-cleanup'
 )
 $ErrorActionPreference = 'Stop'
-$exe = (Resolve-Path -LiteralPath $AppPath).Path
+$exe = (Resolve-Path -LiteralPath $HostPath).Path
+$production = (Resolve-Path -LiteralPath $AppPath).Path
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $output -Force | Out-Null
+foreach ($mode in @('--ui-fault-loaded','--ui-fault-dispatcher','--ui-smoke','--ui-smoke-min','--ui-smoke-en','--ui-smoke-en-min')) {
+    $marker = Join-Path $output ('rejected-' + [guid]::NewGuid().ToString('N'))
+    $process = Start-Process -FilePath $production -ArgumentList @($mode, ('"' + $marker + '"')) -WindowStyle Hidden -PassThru
+    try {
+        if (-not $process.WaitForExit(5000) -or $process.ExitCode -ne 2 -or (Test-Path -LiteralPath $marker)) { throw "Production accepted test argument: $mode" }
+    } finally { if (-not $process.HasExited) { $process.Kill(); $process.WaitForExit() }; $process.Dispose() }
+}
 $results = foreach ($mode in @('loaded', 'dispatcher')) {
     $marker = Join-Path $output ($mode + '-' + [guid]::NewGuid().ToString('N'))
     $process = Start-Process -FilePath $exe -ArgumentList @('--ui-fault-' + $mode, ('"' + $marker + '"')) -WindowStyle Hidden -PassThru

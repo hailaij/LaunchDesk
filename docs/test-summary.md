@@ -1,4 +1,4 @@
-# Test Evidence (v0.6.0 And Working Tree)
+# Historical Test Evidence (v0.6.0/v0.7.0)
 
 Pre-release evidence recorded 2026-10-12. Do not mix the original local v0.6.0
 snapshot, baseline remote CI, and the then-uncommitted working tree. Its changes
@@ -6,10 +6,11 @@ are included in v0.7.0; that release's notes record version-bumped acceptance.
 None of these historical reports validates older v0.5.0 binaries.
 
 - Original local v0.6.0 evidence: 73 passed, 0 failed, 0 skipped.
-  `docs/test-results.json` remains that historical snapshot, not the current 76-group report.
-- Current local working tree: 76 passed, 0 failed, 0 skipped, recorded in
+  The unprovenanced `docs/test-results.json` snapshot has been removed; it remains
+  accessible in Git history and must not validate current source or binaries.
+- Historical v0.7.0 working tree: 76 passed, 0 failed, 0 skipped, recorded in
   `artifacts/verification/log-incremental/test-results.json`. The assertion inventory
-  is 76; incremental-log and Windows 10 compatibility changes are not pushed yet.
+  was 76 at that time; these changes were subsequently published in v0.7.0.
 - Remote commit `43449c5a876096dd0af75fcce9fa482e78d342f9`: 73 passed, 0 failed,
   0 skipped in [run 38215650657](https://github.com/hailaij/LaunchDesk/actions/runs/38215650657).
   All four isolated signature cases actually executed. This is not cloud acceptance

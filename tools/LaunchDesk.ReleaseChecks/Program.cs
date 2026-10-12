@@ -1,13 +1,25 @@
 using System.Reflection;
+using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
 using System.Runtime.Loader;
 using System.Text.Json;
 using LaunchDesk.Core;
 
 try
 {
-    if (args.Length != 3) throw new ArgumentException("Usage: --embedded-pin <Core.dll> <pin-or-empty> | --verify-file <file> <pin>");
+    if (args.Length != 3) throw new ArgumentException("Usage: --embedded-pin <Core.dll> <pin-or-empty> | --verify-file <file> <pin> | --production-boundary <App.dll> <empty>");
     var path = Path.GetFullPath(args[1]); var pin = args[2];
-    if (args[0] == "--embedded-pin")
+    if (args[0] == "--production-boundary")
+    {
+        using var stream = File.OpenRead(path); using var pe = new PEReader(stream);
+        var metadata = pe.GetMetadataReader();
+        var names = metadata.TypeDefinitions.Select(x => metadata.GetString(metadata.GetTypeDefinition(x).Name))
+            .Concat(metadata.FieldDefinitions.Select(x => metadata.GetString(metadata.GetFieldDefinition(x).Name)))
+            .Concat(metadata.PropertyDefinitions.Select(x => metadata.GetString(metadata.GetPropertyDefinition(x).Name)));
+        if (names.Any(x => x.Contains("FaultProbe", StringComparison.Ordinal))) throw new InvalidDataException("Fault injection member found in production assembly.");
+        Console.WriteLine(JsonSerializer.Serialize(new { status = "passed", check = "production-boundary", path }));
+    }
+    else if (args[0] == "--embedded-pin")
     {
         var context = new AssemblyLoadContext("release-metadata", true);
         try

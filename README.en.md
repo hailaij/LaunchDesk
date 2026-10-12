@@ -152,16 +152,18 @@ See [Project structure](docs/project-structure.md). Generated files belong under
 
 Tests use isolated directories and disposable processes. They cover output flooding, UTF-8 chunking, GBK, trailing partial lines, raw bytes, BAT paths/pause, npm, stdin, environment, dependencies, lifecycle races, restart limits, log failures and process-tree cleanup. Three real services remain untested at the user's request.
 
-The core test inventory has 104 groups. Without a signing fixture, three groups are explicitly skipped; strict CI rejects skips. Historical reports: [Test evidence](docs/test-summary.md). Developers can run `./tests/Verify-Ui.ps1` and `./tests/Verify-Engineering.ps1`. Temporary self-signed trust roots are allowed only on disposable GitHub-hosted runners, never developer workstations. The v0.8.0 Release and [review record](docs/release-v0.8.0.md) record its verification scope. Packaging refuses nonempty publish directories; use a new output directory.
+The current source core inventory has 105 groups. Without a signing fixture, three groups are explicitly skipped; strict CI rejects skips. Historical reports: [Test evidence](docs/test-summary.md). Developers can run `./tests/Verify-Ui.ps1` and `./tests/Verify-Engineering.ps1`. Temporary self-signed trust roots are allowed only on disposable GitHub-hosted runners, never developer workstations. The published v0.8.0 Release and [review record](docs/release-v0.8.0.md) record its 104-group verification scope; subsequent unpublished repairs are described in [manager, service and CLI follow-up](docs/v0.8-review-manager-service-cli.md). Packaging refuses nonempty publish directories; use a new output directory.
 
 ```powershell
-artifacts/LaunchDesk-win-x64/LaunchDesk.exe --ui-smoke artifacts/ui.png
-artifacts/LaunchDesk-win-x64/LaunchDesk.exe --ui-smoke-min artifacts/ui-min.png
-artifacts/LaunchDesk-win-x64/LaunchDesk.exe --ui-smoke-en artifacts/ui-en.png
-artifacts/LaunchDesk-win-x64/LaunchDesk.exe --ui-smoke-en-min artifacts/ui-en-min.png
+tests/LaunchDesk.UiChecks/bin/Release/net10.0-windows/LaunchDesk.UiChecks.exe --ui-smoke artifacts/ui.png
+tests/LaunchDesk.UiChecks/bin/Release/net10.0-windows/LaunchDesk.UiChecks.exe --ui-smoke-min artifacts/ui-min.png
+tests/LaunchDesk.UiChecks/bin/Release/net10.0-windows/LaunchDesk.UiChecks.exe --ui-smoke-en artifacts/ui-en.png
+tests/LaunchDesk.UiChecks/bin/Release/net10.0-windows/LaunchDesk.UiChecks.exe --ui-smoke-en-min artifacts/ui-en-min.png
 ```
 
 WPF smoke tests capture actual layouts using isolated fixture data, without launching fixture items. GitHub Actions builds, tests and packages on Windows.
+Production rejects all `--ui-*` test arguments. Reports include mandatory provenance
+sidecars; see [test evidence and fault isolation](docs/test-evidence-and-fault-isolation.md).
 
 ## Contributing
 

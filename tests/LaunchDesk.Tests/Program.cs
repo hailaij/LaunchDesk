@@ -192,6 +192,7 @@ await HealthChecks.Run(root, Test, Worker);
 await ProductChecks.Run(root, Test, Worker, Self);
 await HostingChecks.Run(root, Test, Worker, Self);
 await CorrectnessChecks.Run(root, Test, Worker);
+await ProjectionBoundaryChecks.Run(root, Test);
 await Test("Incremental log cursors handle retention clear and concurrent writes", async () =>
 {
     using var log = new LogStore(Path.Combine(root, "delta"), Guid.NewGuid(), new());

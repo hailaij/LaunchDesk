@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Path, [switch]$RequireNoSkips, [int]$ExpectedCount = 105)
+param([Parameter(Mandatory)][string]$Path, [switch]$RequireNoSkips, [int]$ExpectedCount = 106)
 $ErrorActionPreference = 'Stop'
 $metadata = Get-Content -LiteralPath ($Path + '.metadata.json') -Raw | ConvertFrom-Json
 if ($metadata.schemaVersion -ne 1 -or $metadata.commit -notmatch '^[a-f0-9]{40}$' -or -not $metadata.sdk -or -not $metadata.os -or -not $metadata.runner -or @($metadata.sourceHashes).Count -eq 0) { throw 'Missing test provenance' }

@@ -4,7 +4,8 @@ namespace LaunchDesk.Core;
 // by display retention, filtering, pause, or collection notifications.
 public sealed class LogProjection
 {
-    private sealed record Cached(string Name, bool Merged, string[] Lines);
+    private readonly record struct DisplayLine(string Text, int PrefixLength);
+    private sealed record Cached(string Name, bool Merged, DisplayLine[] Lines);
     private readonly Dictionary<LogRecord, Cached> cache = new(ReferenceEqualityComparer.Instance);
     private sealed class Source
     {
@@ -33,7 +34,7 @@ public sealed class LogProjection
         var snapshot = LogStore.MergeSnapshots(sources.Select(x => (x.Id, x.Name, buffers[x.Store].Records.Select(r => r.Record).ToArray())).ToArray());
         var retained = snapshot.Select(x => x.Record).ToHashSet(ReferenceEqualityComparer.Instance);
         foreach (var record in cache.Keys.Where(x => !retained.Contains(x)).ToArray()) cache.Remove(record);
-        var output = new List<string>();
+        var output = new List<DisplayLine>();
         foreach (var entry in snapshot)
         {
             var record = entry.Record;
@@ -43,19 +44,35 @@ public sealed class LogProjection
                 content = merged ? content.TrimEnd('\n') : content.EndsWith('\n') ? content[..^1] : content;
                 var prefix = $"[{record.Time:HH:mm:ss.fff}] " + (merged ? $"[{entry.Name}] " : "") + $"[{record.Channel}] ";
                 var lines = record.Text.Length == 0 ? [] : content.Split('\n').Select((line, index) =>
-                    (merged || index == 0 ? prefix : "") + line.TrimEnd('\r')).ToArray();
+                {
+                    var label = merged || index == 0 ? prefix : "";
+                    return new DisplayLine(label + line.TrimEnd('\r'), label.Length);
+                }).ToArray();
                 cache[record] = formatted = new(entry.Name, merged, lines); FormattedRecords++;
             }
             if (channel is null || record.Channel == channel) output.AddRange(formatted.Lines);
         }
-        var characters = output.Sum(x => x.Length + 1);
+        var characters = output.Sum(x => x.Text.Length + 1);
         var start = 0;
-        while (start < output.Count && characters - output[start].Length - 1 >= 500_000)
-            characters -= output[start++].Length + 1;
+        while (start < output.Count && characters - output[start].Text.Length - 1 >= 500_000)
+            characters -= output[start++].Text.Length + 1;
         if (start > 0) output.RemoveRange(0, start);
-        if (characters > 500_000 && output.Count > 0) output[0] = output[0][(characters - 500_000)..];
-        if (!string.IsNullOrWhiteSpace(search)) return output.Where(x => x.Contains(search, StringComparison.OrdinalIgnoreCase)).ToArray();
-        if (output.Count > 0) output.Add("");
-        return output.ToArray();
+        if (characters > 500_000 && output.Count > 0)
+        {
+            const string marker = "[... truncated ...] ";
+            var first = output[0];
+            var budget = 500_000 - (characters - first.Text.Length - 1);
+            if (budget < first.PrefixLength + marker.Length + 1) output.RemoveAt(0);
+            else
+            {
+                var cut = first.Text.Length - (budget - first.PrefixLength - marker.Length - 1);
+                // Only trim content; never split the source prefix or a UTF-16 surrogate pair.
+                if (cut < first.Text.Length && char.IsLowSurrogate(first.Text[cut]) && char.IsHighSurrogate(first.Text[cut - 1])) cut++;
+                output[0] = new(first.Text[..first.PrefixLength] + marker + first.Text[cut..], first.PrefixLength);
+            }
+        }
+        if (!string.IsNullOrWhiteSpace(search)) return output.Where(x => x.Text.Contains(search, StringComparison.OrdinalIgnoreCase)).Select(x => x.Text).ToArray();
+        if (output.Count > 0) output.Add(new("", 0));
+        return output.Select(x => x.Text).ToArray();
     }
 }

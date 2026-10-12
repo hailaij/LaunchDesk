@@ -157,7 +157,7 @@ artifacts/LaunchDesk-win-x64/LaunchDesk.exe --ui-smoke-min artifacts/ui-minimum.
 
 `--ui-smoke` 使用独立测试数据目录，截图中的启动项不会执行。GitHub Actions 还会验证签名样本、双语截图像素、虚拟化、异常恢复与进程清理，并上传真实报告。
 
-当前开发测试清单为 76 组；无签名样本时 3 组明确跳过。CI 的 `--fail-on-skip` 拒绝任何跳过，详情及本机报告来源见 [测试证据](docs/test-summary.md)。开发电脑可运行 `./tests/Verify-Ui.ps1` 和 `./tests/Verify-Engineering.ps1`；CI 自签证书脚本仅允许临时 GitHub-hosted runner。本地增量日志性能门禁已通过，但尚未在云端运行；不要将远端 73 组结果用于证明未推送代码已验收。
+当前开发测试清单为 76 组；无签名样本时 3 组明确跳过。CI 的 `--fail-on-skip` 拒绝任何跳过，详情及本机报告来源见 [测试证据](docs/test-summary.md)。开发电脑可运行 `./tests/Verify-Ui.ps1` 和 `./tests/Verify-Engineering.ps1`；CI 自签证书脚本仅允许临时 GitHub-hosted runner。此前 73 组云端报告只覆盖旧提交；v0.7.0 的提交、CI 与构建资产验收见本版本 Release 的验证部分。
 
 ## 贡献
 

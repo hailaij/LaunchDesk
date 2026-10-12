@@ -71,4 +71,3 @@ internal sealed class SettingsHarness
     }
     private sealed class Dialog { public bool Portable { get; } = false; }
 }
-

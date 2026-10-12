@@ -132,7 +132,7 @@ See [Project structure](docs/project-structure.md). Generated files belong under
 
 Tests use isolated directories and disposable processes. They cover output flooding, UTF-8 chunking, GBK, trailing partial lines, raw bytes, BAT paths/pause, npm, stdin, environment, dependencies, lifecycle races, restart limits, log failures and process-tree cleanup. Three real services remain untested at the user's request.
 
-The development test inventory has 76 groups. Without a signing fixture, three groups are explicitly skipped; strict CI rejects skips. See [Test evidence](docs/test-summary.md). Developers can run `./tests/Verify-Ui.ps1` and `./tests/Verify-Engineering.ps1`. Temporary self-signed trust roots are allowed only on disposable GitHub-hosted runners, never developer workstations. The incremental-log performance gates passed locally, not in cloud CI yet; the remote 73-group result does not cover unpushed changes.
+The development test inventory has 76 groups. Without a signing fixture, three groups are explicitly skipped; strict CI rejects skips. See [Test evidence](docs/test-summary.md). Developers can run `./tests/Verify-Ui.ps1` and `./tests/Verify-Engineering.ps1`. Temporary self-signed trust roots are allowed only on disposable GitHub-hosted runners, never developer workstations. Earlier 73-group cloud reports cover the old commit only; the v0.7.0 Release verification section records its commit, CI and binary acceptance.
 
 ```powershell
 artifacts/LaunchDesk-win-x64/LaunchDesk.exe --ui-smoke artifacts/ui.png

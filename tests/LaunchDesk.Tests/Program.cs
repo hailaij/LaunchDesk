@@ -364,51 +364,32 @@ await Test("Language preferences round-trip without changing user data", () =>
     try { ConfigurationStore.Validate(copy); throw new Exception("invalid locale accepted"); } catch (InvalidDataException) { }
     return Task.CompletedTask;
 });
-await Test("Installer metadata is pinned to expected GitHub asset", () =>
+await Test("Update links ignore remote page and installer URLs", () =>
 {
-    var hash = new string('a', 64);
-    var json = $$"""{"tag_name":"v9.0.0","draft":false,"prerelease":false,"assets":[{"name":"LaunchDesk-v9.0.0-win-x64-setup.exe","size":42,"digest":"sha256:{{hash}}","browser_download_url":"https://evil.example/installer.exe"}]}""";
+    var json = """{"tag_name":"v9.0.0","draft":false,"prerelease":false,"html_url":"https://evil.example/page","assets":[{"browser_download_url":"https://evil.example/installer.exe"}]}""";
     var release = UpdateChecker.Parse(json)!;
-    Assert(release.Installer?.DownloadUri.Host == "github.com" && release.Installer.Size == 42, "ignore untrusted metadata URLs");
-    Assert(UpdateChecker.Parse(json.Replace("sha256:", "sha1:"))!.Installer is null, "unknown digest rejected");
-    Assert(UpdateChecker.Parse(json.Replace("\"size\":42", "\"size\":0"))!.Installer is null, "empty asset rejected");
-    foreach (var url in new[] { "http://github.com/a", "https://evil.example/a", "https://github.com:444/a", "https://user@github.com/a", "https://github.com/a#fragment" })
-        try { UpdateDownloader.ValidateDownloadUri(new(url)); throw new Exception("unsafe URL accepted"); } catch (InvalidDataException) { }
+    Assert(release.Page.AbsoluteUri == "https://github.com/hailaij/LaunchDesk/releases/tag/v9.0.0", "fixed repository page");
+    Assert(typeof(ReleaseUpdate).GetProperty("Installer") is null, "no installer metadata");
+    Assert(typeof(UpdateChecker).Assembly.GetType("LaunchDesk.Core.UpdateDownloader") is null, "no in-app downloader");
     return Task.CompletedTask;
 });
-await Test("Verified downloads require both hash and signature, failures clean up", async () =>
+await Test("Release page rejects injected and malformed tags", () =>
 {
-    var bytes = Encoding.UTF8.GetBytes("isolated fake installer, never executed");
-    var asset = new ReleaseAsset("LaunchDesk-v9.0.0-win-x64-setup.exe", bytes.Length, Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)), new Uri("https://github.com/hailaij/LaunchDesk/releases/download/v9.0.0/LaunchDesk-v9.0.0-win-x64-setup.exe"));
-    var release = new ReleaseUpdate(new(9, 0, 0), "v9.0.0", "", new Uri("https://github.com/hailaij/LaunchDesk/releases/tag/v9.0.0")) { Installer = asset };
-    var cache = Path.Combine(root, "update-cache");
-    var old = Path.Combine(root, "old-version.txt"); await File.WriteAllTextAsync(old, "unchanged");
-    var verifier = new TestSignatureVerifier();
-    using var client = new HttpClient(new DownloadResponseHandler(bytes));
-    var result = await new UpdateDownloader(client, verifier).DownloadAsync(release, cache);
-    Assert(verifier.Calls == 1 && File.ReadAllBytes(result.Path).SequenceEqual(bytes), "verified promotion");
-    foreach (var mode in new[] { "hash", "signature", "truncated", "oversized", "network", "redirect", "cancel", "midstream" })
+    foreach (var tag in new[] { "", "../evil", "v9.0.0?url=https://evil.example", "v9.0.0#fragment", "https://evil.example", "v09.0.0", "v9.0.0-beta" })
     {
-        var failingCache = Path.Combine(root, "download-failure-" + mode);
-        using var failingClient = new HttpClient(new DownloadResponseHandler(bytes, mode));
-        var signer = new TestSignatureVerifier { Reject = mode == "signature" };
-        var failingRelease = mode == "hash" ? release with { Installer = asset with { Sha256 = new string('0', 64) } } : release;
-        using var cancel = new CancellationTokenSource(); if (mode == "cancel") cancel.Cancel();
-        var failed = false;
-        try { await new UpdateDownloader(failingClient, signer).DownloadAsync(failingRelease, failingCache, cancellationToken: cancel.Token); }
-        catch (Exception) { failed = true; }
-        Assert(failed && (!Directory.Exists(failingCache) || !Directory.EnumerateFileSystemEntries(failingCache).Any()), mode + " rollback");
-        Assert(File.ReadAllText(old) == "unchanged", "old version unchanged");
-        if (mode == "hash") Assert(signer.Calls == 0, "hash precedes trust check");
+        var rejected = false;
+        try { UpdateChecker.ReleasePage(tag); } catch (InvalidDataException) { rejected = true; }
+        Assert(rejected, "unsafe tag rejected: " + tag);
     }
+    Assert(UpdateChecker.ReleasePage("9.0.0").AbsoluteUri.EndsWith("/9.0.0"), "numeric release tag supported");
+    return Task.CompletedTask;
 });
-await Test("Unconfigured publisher blocks download before network access", async () =>
+await Test("Update checking requires no installer or signing configuration", async () =>
 {
-    var handler = new DownloadResponseHandler([1]); using var client = new HttpClient(handler);
-    var release = new ReleaseUpdate(new(9, 0, 0), "v9.0.0", "", new Uri("https://github.com/hailaij/LaunchDesk/releases"));
-    try { await new UpdateDownloader(client, new AuthenticodeVerifier("")).DownloadAsync(release, Path.Combine(root, "unconfigured")); throw new Exception("missing publisher accepted"); }
-    catch (InvalidDataException) { }
-    Assert(handler.Calls == 0, "no network request without trust pin");
+    var json = """{"tag_name":"v9.0.0","draft":false,"prerelease":false,"body":"manual update"}""";
+    using var client = new HttpClient(new UpdateResponseHandler { Json = json });
+    var release = await UpdateChecker.CheckAsync(client: client);
+    Assert(release is not null && release.Notes == "manual update" && release.IsNewerThan(new Version(0, 9, 0)), "metadata-only check");
 });
 await SigningChecks.Run(root, Test);
 await Test("Rename and stable startup priority preserve dependencies", async () =>
@@ -948,6 +929,7 @@ return results.Count == 0 ? 2 : results.Any(x => x.status == "failed") || (args.
 
 sealed class UpdateResponseHandler : HttpMessageHandler
 {
+    public string Json { get; init; } = """{"tag_name":"v0.3.0","draft":false,"prerelease":false,"body":"Release notes"}""";
     public System.Net.HttpStatusCode Status { get; set; } = System.Net.HttpStatusCode.OK;
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -955,43 +937,6 @@ sealed class UpdateResponseHandler : HttpMessageHandler
         if (request.RequestUri?.AbsoluteUri != "https://api.github.com/repos/hailaij/LaunchDesk/releases/latest"
             || request.Headers.UserAgent.Count == 0) throw new InvalidOperationException("Unexpected update request");
         return Task.FromResult(new HttpResponseMessage(Status)
-        { Content = new StringContent("""{"tag_name":"v0.3.0","draft":false,"prerelease":false,"body":"Release notes"}""") });
-    }
-}
-
-sealed class TestSignatureVerifier : IUpdateSignatureVerifier
-{
-    public int Calls { get; private set; }
-    public bool Reject { get; init; }
-    public string Verify(string path) { Calls++; if (Reject) throw new InvalidDataException("test signature rejection"); return "isolated test publisher"; }
-}
-sealed class DownloadResponseHandler(byte[] bytes, string mode = "") : HttpMessageHandler
-{
-    public int Calls { get; private set; }
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-    {
-        Calls++; cancellationToken.ThrowIfCancellationRequested();
-        if (mode == "network") throw new HttpRequestException("isolated network failure");
-        if (mode == "redirect")
-        {
-            var redirect = new HttpResponseMessage(System.Net.HttpStatusCode.Redirect);
-            redirect.Headers.Location = new Uri("https://evil.example/installer.exe"); return Task.FromResult(redirect);
-        }
-        var payload = mode == "truncated" ? bytes[..^1] : mode == "oversized" ? bytes.Concat(new byte[] { 0 }).ToArray() : bytes;
-        HttpContent content = mode == "midstream" ? new StreamContent(new InterruptedStream(bytes)) : new ByteArrayContent(payload);
-        content.Headers.ContentLength = payload.Length;
-        return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = content });
-    }
-}
-sealed class InterruptedStream : MemoryStream
-{
-    private bool read;
-    private readonly int chunkSize;
-    public InterruptedStream(byte[] bytes) : base(bytes) { chunkSize = bytes.Length / 2; }
-    public override bool CanSeek => false;
-    public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
-    {
-        if (read) throw new IOException("isolated interruption after partial write");
-        read = true; return base.ReadAsync(buffer[..Math.Min(buffer.Length, chunkSize)], cancellationToken);
+        { Content = new StringContent(Json) });
     }
 }

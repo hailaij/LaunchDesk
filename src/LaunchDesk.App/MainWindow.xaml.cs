@@ -342,7 +342,13 @@ public partial class MainWindow : Window
             if (store.Load().Items.Single(x => x.Id == secondMember.Id).Note != "Saved on blur")
                 throw new InvalidOperationException("Note focus-loss save failed.");
             var updatePrompt = new UpdateDialog(new(new Version(9, 0, 0), "v9.0.0", T("更新界面测试：不会访问网络或执行安装。"), new Uri("https://github.com/hailaij/LaunchDesk/releases/tag/v9.0.0"))) { Owner = this };
-            updatePrompt.Show(); await Task.Delay(250); Capture(updatePrompt, Path.ChangeExtension(smokePath, null) + "-update-prompt.png"); updatePrompt.Close();
+            updatePrompt.Show(); await Task.Delay(250);
+            var updateContent = (StackPanel)((ScrollViewer)((Border)updatePrompt.Content).Child).Content;
+            var updateActions = updateContent.Children.OfType<WrapPanel>().Single().Children.OfType<Button>().ToArray();
+            if (updateActions.Length != 2 || updateActions[0].Content?.ToString() != T("打开下载页") || !updateActions[0].IsEnabled
+                || updateActions[1].Content?.ToString() != T("稍后") || updateContent.Children.OfType<ProgressBar>().Any())
+                throw new InvalidOperationException("Link-only update dialog contract failed.");
+            Capture(updatePrompt, Path.ChangeExtension(smokePath, null) + "-update-prompt.png"); updatePrompt.Close();
             var originalLanguage = config.Preferences.Language;
             var names = config.Items.Select(x => x.Name).ToArray();
             var rawLog = string.Concat(manager.Logs(secondMember.Id).Snapshot().Select(x => x.Text));

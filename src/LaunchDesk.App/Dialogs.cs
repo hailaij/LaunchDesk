@@ -434,7 +434,7 @@ public sealed class AboutDialog : Window
             return;
         }
         release = result;
-        openRelease.Content = T("查看更新 / 下载");
+        openRelease.Content = T("打开下载页");
         updateStatus.Text = T("发现新版本 ") + result.Tag;
         releaseNotes.Text = result.Notes; releaseNotes.Visibility = openRelease.Visibility = Visibility.Visible;
     }

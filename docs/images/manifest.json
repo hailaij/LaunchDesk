@@ -1,32 +1,32 @@
 {
-  "version": "0.8.1",
-  "generatedOn": "2026-10-12",
+  "version": "0.9.0",
+  "generatedOn": "2026-10-13",
   "source": "WPF isolated --ui-smoke and --ui-smoke-en-min",
   "fixtureData": true,
   "images": [
     {
-      "name": "first-launch.png",
-      "sha256": "4052617a3355ac49267ccb5d454ca87a4f306d2207f81c42e08dcaf1f80b1474"
+      "sha256": "b40c767df7710e017b7d552a5cf30af91d17436721721cd14bdc790c536da1dd",
+      "name": "first-launch.png"
     },
     {
-      "name": "health-settings.png",
-      "sha256": "87464722e4f04ca77d6e22225feb0b8f03acfaf1cffa89b35bdda3d033003865"
+      "sha256": "87464722e4f04ca77d6e22225feb0b8f03acfaf1cffa89b35bdda3d033003865",
+      "name": "health-settings.png"
     },
     {
-      "name": "main-dark.png",
-      "sha256": "85215a21091c23a4de9272bc25476db0d424df2a84c196651a3c3476ed7ea38b"
+      "sha256": "3f6a12fe17b63d334346aad713390c0c81fb50240913da69d0a24ee9b1d739ab",
+      "name": "main-dark.png"
     },
     {
-      "name": "main-en.png",
-      "sha256": "0d6b0802b5570ff06c53d351036feac281657273121bb0146dbd406d62c18363"
+      "sha256": "b7e7fa62cfac22f072268a6ca806fa31a1c52e09b3e1bbb1e1212574dc9f6312",
+      "name": "main-en.png"
     },
     {
-      "name": "main.png",
-      "sha256": "d3a7d94a0c1af200fd2909e59c6990b2103cb388ba2bd21a3fbaf4396023b7c2"
+      "sha256": "7031471cc9428ea3b7f11cbf15ab2a1a3095a2bd0c11f6d90cb79a930c874b96",
+      "name": "main.png"
     },
     {
-      "name": "settings.png",
-      "sha256": "5d386d53cbd9f255327c594d0f3dcbc33a8f0854fb2d1cbf00c5deab19699f9e"
+      "sha256": "169e4d63d1e9226f495c04f2ee491be0ef18563f7609d1cd47c62eac5c7a1774",
+      "name": "settings.png"
     }
   ]
 }

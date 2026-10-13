@@ -12,7 +12,7 @@ Output encoding: new items default to `auto`. Each output pipe starts with UTF-8
 
 Windows 10/11 x64 launch manager. Run `LaunchDesk.exe`; the self-contained application includes its runtime.
 
-v0.8.1 is an unsigned prerelease for manual installation only. SHA-256 checks integrity, not publisher identity. Exit the previous tray instance and back up data before upgrading.
+v0.9.0 is an unsigned prerelease for manual installation only. SHA-256 checks integrity, not publisher identity. Exit the previous tray instance and back up data before upgrading.
 
 New in v0.8.0: CLI and crash recovery. Open the desktop app first; use the adjacent `LaunchDesk.Cli.exe list`, `status --json`, `start "name"`, `stop "name"`, or `restart "name"`. `start --all` / `stop --all` control all items. Use an item GUID when names are duplicated. The CLI controls the existing instance, without bypassing UAC or providing remote access. Configured per-item elevation still requires user consent. Exit codes: 0 success, 1 operation failed, 2 invalid arguments, 3 connection failed, 4 timeout; query status after a timeout.
 
@@ -58,7 +58,7 @@ Portable mode uses `portable.flag` next to the EXE and its `data/` directory. Se
 
 Default log retention: 7 days, approximately 200 MiB per item. Panel limits: 3,000 record fragments and approximately 500,000 characters. Pause/clear affects display only. Export retained logs as TXT or JSONL; JSONL retains original bytes. History deletion is separate and requires confirmation. Each stdout/stderr pipe preserves its own order; interleaving is read order, not a guaranteed global sequence.
 
-Background startup update checks are on by default and configurable. Failures and current versions do not interrupt. New releases prompt when the window is visible. Download requires a user click and SHA-256, Windows Authenticode and pinned publisher certificate verification. Failure or cancellation removes temporary packages without replacing the current program/configuration. No silent installation or installation rollback. **No publisher certificate is configured yet; in-app downloads are disabled and unsigned installers are rejected.** Manual release-page access remains available.
+Startup checks are configurable and only prompt for newer stable releases. Click Open download page to launch the fixed GitHub Release URL in your default browser. No browser opens automatically. Download and installation are manual; in-app download, signature validation and installation actions were removed in v0.9.0.
 
 The application normally runs without administrator privileges. It does not bypass PowerShell policy. Job Objects manage associated process trees; externally hosted services, existing GUI instances and WSL/Docker internals are not guaranteed to belong to them. File-only/unflushed output, power loss and disk failures cannot be guaranteed lossless.
 

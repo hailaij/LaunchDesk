@@ -5,7 +5,7 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace LaunchDesk.Core;
 
-public sealed class AuthenticodeVerifier(string? trustedCertificateSha256 = null) : IUpdateSignatureVerifier
+public sealed class AuthenticodeVerifier(string? trustedCertificateSha256 = null)
 {
     public static string EmbeddedCertificateSha256 => typeof(AuthenticodeVerifier).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
         .FirstOrDefault(x => x.Key == "UpdateSignerSha256")?.Value ?? "";

@@ -257,6 +257,7 @@ HTTP 地址|HTTP URL
 设置无效|Invalid settings
 检查更新|Check for updates
 打开下载页|Open download page
+请在浏览器中下载并手动安装更新。|Download in your browser and install the update manually.
 版本 |Version\u0020
 Windows 启动项管理器|Windows launch item manager
 版本更新|Version updates

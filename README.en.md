@@ -2,9 +2,9 @@
 
 [Simplified Chinese](README.md) | [English](README.en.md)
 
-A Windows desktop manager for scripts, commands and applications, with real-time logs. Current version: **v0.9.0** (unsigned prerelease, early development).
+A Windows desktop manager for scripts, commands and applications, with real-time logs. Current version: **v0.9.0** (stable release, unsigned, early development).
 
-**Release status:** This is an unsigned prerelease for manual download and installation only. Missing production signing configuration still blocks the trusted update pipeline. Test certificates never enter production trust. See [Trust and engineering verification](docs/trust-and-engineering.md).
+**Release status:** This is an stable release, unsigned for manual download and installation only. Missing production signing configuration still blocks the trusted update pipeline. Test certificates never enter production trust. See [Trust and engineering verification](docs/trust-and-engineering.md).
 
 ![LaunchDesk](docs/images/main-en.png)
 
@@ -88,7 +88,7 @@ A Windows desktop manager for scripts, commands and applications, with real-time
 
 Windows 10/11 x64. Self-contained packages include the .NET runtime. Keep the entire extracted directory and launch `LaunchDesk.exe`.
 
-Manually download `LaunchDesk-v0.9.0-win-x64-setup.exe` or the portable `LaunchDesk-v0.9.0-win-x64.zip` from [Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.9.0). SHA-256 sidecar files are provided. This unsigned prerelease requires manual installation and is not a trusted in-app update. Hashes do not replace publisher signatures.
+Manually download `LaunchDesk-v0.9.0-win-x64-setup.exe` or the portable `LaunchDesk-v0.9.0-win-x64.zip` from [Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.9.0). SHA-256 sidecar files are provided. This stable release, unsigned requires manual installation and is not a trusted in-app update. Hashes do not replace publisher signatures.
 
 First launch is empty. No local services are preconfigured or executed. Closing the window hides it to the tray. Use **Exit** in the tray menu to stop all managed processes and drain logs before upgrading. Single-instance activation may restore an already running older copy; window titles show the actual assembly version, and cross-version/path launches show a warning.
 
@@ -186,7 +186,7 @@ Use [Issues](https://github.com/hailaij/LaunchDesk/issues) or pull requests. Run
 #### Changed
 - Removed in-app installer downloading, download verification and installation actions. Startup/manual checks still prompt for newer stable releases; a user click opens the fixed GitHub release page in the browser for manual installation.
 - `dev` preserves the complete history through v0.8.1; `main` continues from v0.8.1. Existing tags and Releases remain unchanged.
-- Unsigned prerelease; production signing gates remain strict. The original intermittent interpreter timeout remains unexplained.
+- Stable release, unsigned; production signing gates remain strict. The original intermittent interpreter timeout remains unexplained.
 
 
 ### [0.8.1] - 2026-10-12

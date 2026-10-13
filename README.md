@@ -2,9 +2,9 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-Windows 启动项管理器。当前版本 **v0.9.0**（未签名预发布，0.x 开发阶段），支持中英文界面。
+Windows 启动项管理器。当前版本 **v0.9.0**（正式发布，未签名，0.x 开发阶段），支持中英文界面。
 
-**发布状态：**本版本为未签名预发布，仅供手动下载和安装。可信更新流水线在缺少正式签名配置时仍会阻断发布；测试证书不会用于生产信任。见 [可信度与工程化验收](docs/trust-and-engineering.md)。
+**发布状态：**本版本为正式发布，未签名，仅供手动下载和安装。可信更新流水线在缺少正式签名配置时仍会阻断发布；测试证书不会用于生产信任。见 [可信度与工程化验收](docs/trust-and-engineering.md)。
 
 ![LaunchDesk](docs/images/main.png)
 
@@ -84,7 +84,7 @@ Windows 启动项管理器。当前版本 **v0.9.0**（未签名预发布，0.x 
 
 面向 Windows 10/11 x64。自包含发布包自带 .NET 运行时，解压后运行 `LaunchDesk.exe`，请保留整个目录。
 
-从 [GitHub Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.9.0) 手动下载 `LaunchDesk-v0.9.0-win-x64-setup.exe` 安装程序，或 `LaunchDesk-v0.9.0-win-x64.zip` 免安装包。各文件附带 `.sha256` 校验文件。本版本为未签名预发布，仅手动安装，不提供可信应用内更新。哈希不替代发行者签名。
+从 [GitHub Releases](https://github.com/hailaij/LaunchDesk/releases/tag/v0.9.0) 手动下载 `LaunchDesk-v0.9.0-win-x64-setup.exe` 安装程序，或 `LaunchDesk-v0.9.0-win-x64.zip` 免安装包。各文件附带 `.sha256` 校验文件。本版本为正式发布，未签名，仅手动安装，不提供可信应用内更新。哈希不替代发行者签名。
 
 在设置的“外观”中选择浅色、深色或跟随系统，保存后立即生效。旧版本配置无需手动迁移，未指定主题时默认跟随系统。升级时请先从托盘退出旧版本，再解压到新目录运行；便携模式用户需将原目录的 `portable.flag` 和 `data\` 复制到新版本目录，原数据保留备份。
 
@@ -200,7 +200,7 @@ LaunchDesk 使用 [MIT](LICENSE) 许可证。Windows/.NET 运行时按各自条�
 #### 变更
 - 移除应用内安装包下载、下载验签和安装入口；保留启动后台检查及手动检查，仅提示正式新版，点击打开对应 GitHub Release 后手动下载和安装，不自动打开浏览器。
 - `dev` 保留 v0.6.0 至 v0.8.1 的完整历史；`main` 基于 v0.8.1 继续开发，旧标签和 Release 不变。
-- 继续未签名预发布，正式签名发布门禁不放宽；原解释器偶发超时根因仍未确认。
+- 正式发布，未签名，正式签名发布门禁不放宽；原解释器偶发超时根因仍未确认。
 
 
 ### [0.8.1] - 2026-10-12

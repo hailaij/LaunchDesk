@@ -12,7 +12,7 @@ Output encoding: new items default to `auto`. Each output pipe starts with UTF-8
 
 Windows 10/11 x64 launch manager. Run `LaunchDesk.exe`; the self-contained application includes its runtime.
 
-v0.9.0 is an unsigned prerelease for manual installation only. SHA-256 checks integrity, not publisher identity. Exit the previous tray instance and back up data before upgrading.
+v0.9.0 is an stable release, unsigned for manual installation only. SHA-256 checks integrity, not publisher identity. Exit the previous tray instance and back up data before upgrading.
 
 New in v0.8.0: CLI and crash recovery. Open the desktop app first; use the adjacent `LaunchDesk.Cli.exe list`, `status --json`, `start "name"`, `stop "name"`, or `restart "name"`. `start --all` / `stop --all` control all items. Use an item GUID when names are duplicated. The CLI controls the existing instance, without bypassing UAC or providing remote access. Configured per-item elevation still requires user consent. Exit codes: 0 success, 1 operation failed, 2 invalid arguments, 3 connection failed, 4 timeout; query status after a timeout.
 

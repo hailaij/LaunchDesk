@@ -8,6 +8,8 @@ public sealed record LogRecord(DateTimeOffset Time, string Channel, string Text,
 public sealed record LogDelta(long Cursor, long FirstCursor, bool Reset, LogRecord[] Records);
 public sealed partial class LogStore : IDisposable
 {
+    public const int MaximumMemoryRecords = 3000;
+    public const int MaximumMemoryCharacters = 500_000;
     public const long MaximumMemoryPayloadBytes = 4 * 1024 * 1024;
     private static long PayloadBytes(LogRecord record) => 2L * record.Text.Length + (record.RawBytes?.LongLength ?? 0);
     private readonly object gate = new();
@@ -18,6 +20,7 @@ public sealed partial class LogStore : IDisposable
     private long cursor;
     private long resetCursor;
     private readonly Preferences preferences;
+    private readonly TimeProvider clock;
     private StreamWriter? writer;
     private string? currentFile;
     private DateTime currentDate;
@@ -34,23 +37,27 @@ public sealed partial class LogStore : IDisposable
     public long ChangeStamp => Interlocked.Read(ref changeStamp);
     public string[] CleanupWarnings { get { lock (gate) return cleanupWarnings.ToArray(); } }
     public LogStore(string root, Guid id, Preferences preferences)
-    { DirectoryPath = Path.Combine(root, "logs", id.ToString("N")); this.preferences = preferences; }
+        : this(root, id, preferences, TimeProvider.System) { }
+    public LogStore(string root, Guid id, Preferences preferences, TimeProvider clock)
+    { DirectoryPath = Path.Combine(root, "logs", id.ToString("N")); this.preferences = preferences; this.clock = clock; }
     public void Write(string channel, string text, byte[]? rawBytes = null)
     {
         if (text.Length == 0 && rawBytes is not { Length: > 0 }) return;
         lock (diskGate)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
-            var record = new LogRecord(DateTimeOffset.Now, channel, text, rawBytes);
+            var record = new LogRecord(clock.GetLocalNow(), channel, text, rawBytes);
+            // Rotate and name from one UTC instant; the record keeps its local display offset.
+            var utc = record.Time.UtcDateTime;
             var serialized = JsonSerializer.Serialize(record);
             if (writer is null || bytes > Math.Min(10 * 1024 * 1024L, preferences.LogLimitMiB * 1024 * 1024L / 2)
-                || currentDate != record.Time.Date)
+                || currentDate != utc.Date)
             {
                 writer?.Dispose(); writer = null;
                 Directory.CreateDirectory(DirectoryPath); Cleanup();
-                currentFile = Path.Combine(DirectoryPath, DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fffffff") + ".jsonl");
+                currentFile = Path.Combine(DirectoryPath, utc.ToString("yyyyMMdd-HHmmss-fffffff", System.Globalization.CultureInfo.InvariantCulture) + ".jsonl");
                 writer = new StreamWriter(new FileStream(currentFile, FileMode.CreateNew, FileAccess.Write, FileShare.Read), new UTF8Encoding(false));
-                currentDate = record.Time.Date;
+                currentDate = utc.Date;
                 bytes = 0;
             }
             // Disk is the source of truth; a failed write must propagate to the supervisor.
@@ -59,7 +66,7 @@ public sealed partial class LogStore : IDisposable
             {
                 memory.Enqueue(record); cursors.Enqueue(++cursor); characters += text.Length; memoryPayloadBytes += PayloadBytes(record); revision++;
                 Interlocked.Exchange(ref changeStamp, Interlocked.Increment(ref sequence));
-                while (memory.Count > 3000 || characters > 500_000 || memoryPayloadBytes > MaximumMemoryPayloadBytes)
+                while (memory.Count > MaximumMemoryRecords || characters > MaximumMemoryCharacters || memoryPayloadBytes > MaximumMemoryPayloadBytes)
                 { var removed = memory.Dequeue(); characters -= removed.Text.Length; memoryPayloadBytes -= PayloadBytes(removed); cursors.Dequeue(); }
             }
         }
@@ -96,6 +103,7 @@ public sealed partial class LogStore : IDisposable
         catch (UnauthorizedAccessException error) { warn?.Invoke(error.Message); }
     }
     public LogRecord[] Snapshot() { lock (gate) return memory.ToArray(); }
+    // Retained records keep reference identity for LogProjection's cache across snapshots/deltas.
     public LogDelta ReadSince(long after)
     {
         lock (gate)
@@ -149,7 +157,7 @@ public sealed partial class LogStore : IDisposable
         foreach (var record in ReadRecords(recentOnly: true))
         {
             loaded.Enqueue(record); count += record.Text.Length; payload += PayloadBytes(record);
-            while (loaded.Count > 3000 || count > 500_000 || payload > MaximumMemoryPayloadBytes)
+            while (loaded.Count > MaximumMemoryRecords || count > MaximumMemoryCharacters || payload > MaximumMemoryPayloadBytes)
             { var removed = loaded.Dequeue(); count -= removed.Text.Length; payload -= PayloadBytes(removed); }
         }
         lock (gate)
@@ -175,12 +183,12 @@ public sealed partial class LogStore : IDisposable
             foreach (var record in source.Records)
             {
                 queue.Enqueue((source.Id, source.Name, record), (record.Time, sequence++));
-                if (queue.Count > 3000) queue.Dequeue();
+                if (queue.Count > MaximumMemoryRecords) queue.Dequeue();
             }
         var records = new List<(Guid Id, string Name, LogRecord Record)>();
         while (queue.TryDequeue(out var record, out _)) records.Add(record);
         var characters = 0; long payload = 0; var start = records.Count;
-        while (start > 0 && characters + records[start - 1].Record.Text.Length <= 500_000
+        while (start > 0 && characters + records[start - 1].Record.Text.Length <= MaximumMemoryCharacters
             && payload + PayloadBytes(records[start - 1].Record) <= MaximumMemoryPayloadBytes)
         { payload += PayloadBytes(records[start - 1].Record); characters += records[--start].Record.Text.Length; }
         return records.Skip(start).ToArray();
@@ -299,7 +307,7 @@ public sealed partial class LogStore : IDisposable
     // Retention is bounded; indexed copies cost only the requested delta, not the retained prefix.
     private sealed class RecordBuffer
     {
-        private readonly LogRecord?[] records = new LogRecord[3001];
+        private readonly LogRecord?[] records = new LogRecord[MaximumMemoryRecords + 1];
         private int head;
         public int Count { get; private set; }
         public void Enqueue(LogRecord record)

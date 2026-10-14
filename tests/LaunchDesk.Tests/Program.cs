@@ -4,6 +4,10 @@ using System.Text.Json;
 using LaunchDesk.Core;
 
 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+if (args is ["--maintenance-benchmark", var maintenanceReport])
+{
+    await MaintenanceBenchmarks.Run(maintenanceReport); return 0;
+}
 if (args is ["--log-benchmark", var benchmarkReport])
 {
     await LogBenchmarks.Run(benchmarkReport); return 0;
@@ -185,8 +189,8 @@ if (args.Length > 0 && args[0] != "--report")
     }
 }
 
-var root = Path.Combine(Path.GetTempPath(), "LaunchDesk-tests-" + Guid.NewGuid().ToString("N"));
-Directory.CreateDirectory(root);
+var workspace = new TestWorkspace();
+var root = workspace.Root;
 var results = new List<TestResult>();
 var startedAt = DateTimeOffset.UtcNow;
 var filterIndex = Array.IndexOf(args, "--filter");
@@ -214,6 +218,7 @@ async Task Test(string name, Func<Task> action)
         try
         {
             var command = "--report " + LaunchCommand.Quote(childReport) + " --filter " + LaunchCommand.Quote(name) + " --isolated-case";
+            if (args.Contains("--keep-test-data")) command += " --keep-test-data";
             var result = await IsolatedTest.RunCase(Worker(command), childReport, name);
             results.Add(result); Console.WriteLine(result.status.ToUpperInvariant() + " " + name);
         }
@@ -243,6 +248,8 @@ await ProductChecks.Run(root, Test, Worker, Self);
 await HostingChecks.Run(root, Test, Worker, Self);
 await CorrectnessChecks.Run(root, Test, Worker);
 await ProjectionBoundaryChecks.Run(root, Test);
+await LogPolicyChecks.Run(root, Test);
+await WorkspaceChecks.Run(root, Test);
 await Test("Incremental log cursors handle retention clear and concurrent writes", async () =>
 {
     using var log = new LogStore(Path.Combine(root, "delta"), Guid.NewGuid(), new());
@@ -962,9 +969,12 @@ var reportPath = args.Length >= 2 && args[0] == "--report" ? args[1] : Path.Comb
 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(reportPath))!);
 await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
 await TestEvidence.WriteAsync(reportPath, startedAt, filter);
-Console.WriteLine("Evidence: " + root);
+var exitCode = results.Count == 0 ? 2 : results.Any(x => x.status == "failed") || (args.Contains("--fail-on-skip") && results.Any(x => x.status == "skipped")) ? 1 : 0;
+var retention = workspace.Finish(reportPath, results.Count > 0 && results.All(x => x.status == "passed"), args.Contains("--keep-test-data"));
+Console.WriteLine("Data directory: " + root + " (" + retention + ")");
+Console.WriteLine("Report: " + Path.GetFullPath(reportPath));
 Console.WriteLine($"Summary: {results.Count(x => x.status == "passed")} passed, {results.Count(x => x.status == "failed")} failed, {results.Count(x => x.status == "skipped")} skipped");
-return results.Count == 0 ? 2 : results.Any(x => x.status == "failed") || (args.Contains("--fail-on-skip") && results.Any(x => x.status == "skipped")) ? 1 : 0;
+return exitCode;
 
 sealed class UpdateResponseHandler : HttpMessageHandler
 {

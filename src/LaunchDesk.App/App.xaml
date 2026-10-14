@@ -7,12 +7,32 @@
   <SolidColorBrush x:Key="Canvas" Color="#F4F5F7"/>
   <SolidColorBrush x:Key="Surface" Color="#FFFFFF"/>
   <SolidColorBrush x:Key="SurfaceHover" Color="#EBEEF1"/>
+  <SolidColorBrush x:Key="FolderSurface" Color="#F0F5F3"/>
+  <Style x:Key="ConfigurationTabs" TargetType="TabControl">
+   <Setter Property="Background" Value="{DynamicResource Canvas}"/><Setter Property="BorderThickness" Value="0"/>
+   <Setter Property="ItemContainerStyle"><Setter.Value><Style TargetType="TabItem">
+    <Setter Property="Foreground" Value="{DynamicResource Muted}"/><Setter Property="Background" Value="Transparent"/><Setter Property="Padding" Value="12,12"/>
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabItem"><Border x:Name="TabChrome" Background="{TemplateBinding Background}" BorderThickness="0,0,0,2" BorderBrush="Transparent" Padding="{TemplateBinding Padding}"><ContentPresenter ContentSource="Header" RecognizesAccessKey="True"/></Border><ControlTemplate.Triggers>
+     <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{DynamicResource SurfaceHover}"/></Trigger>
+     <Trigger Property="IsSelected" Value="True"><Setter Property="Foreground" Value="{DynamicResource Text}"/><Setter TargetName="TabChrome" Property="BorderBrush" Value="{DynamicResource Accent}"/></Trigger>
+    </ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+   </Style></Setter.Value></Setter>
+   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabControl"><Grid KeyboardNavigation.TabNavigation="Local"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions><TabPanel IsItemsHost="True" KeyboardNavigation.TabIndex="1" Background="{DynamicResource Canvas}"/><Border Grid.Row="1" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource Stroke}"><ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent"/></Border></Grid></ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style TargetType="ContextMenu"><Setter Property="Background" Value="{DynamicResource Surface}"/><Setter Property="Foreground" Value="{DynamicResource Text}"/><Setter Property="BorderBrush" Value="{DynamicResource Stroke}"/></Style>
+  <Style TargetType="MenuItem"><Setter Property="Background" Value="{DynamicResource Surface}"/><Setter Property="Foreground" Value="{DynamicResource Text}"/><Setter Property="Padding" Value="12,7"/></Style>
   <SolidColorBrush x:Key="Stroke" Color="#DCE1E6"/>
   <SolidColorBrush x:Key="Text" Color="#24272C"/>
   <SolidColorBrush x:Key="Muted" Color="#636B76"/>
   <SolidColorBrush x:Key="Selection" Color="#E2F2EB"/>
   <SolidColorBrush x:Key="Terminal" Color="#202225"/>
   <SolidColorBrush x:Key="TerminalText" Color="#E3E8ED"/>
+  <SolidColorBrush x:Key="LogError" Color="#FF9C9C"/>
+  <SolidColorBrush x:Key="LogSystem" Color="#E6C778"/>
+  <SolidColorBrush x:Key="LogInput" Color="#99DDB4"/>
+  <SolidColorBrush x:Key="LogLink" Color="#71C7FF"/>
+  <SolidColorBrush x:Key="LogSelection" Color="#264F70"/>
+  <SolidColorBrush x:Key="LogSelectedText" Color="#FFFFFF"/>
   <Style TargetType="Window"><Setter Property="FontFamily" Value="Segoe UI,Microsoft YaHei UI"/><Setter Property="FontSize" Value="13"/><Setter Property="Background" Value="{DynamicResource Canvas}"/><Setter Property="Foreground" Value="{DynamicResource Text}"/></Style>
   <Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource Text}"/></Style>
   <Style TargetType="Button">
@@ -39,7 +59,7 @@
   <Style TargetType="ListBox"><Setter Property="Background" Value="{DynamicResource Surface}"/><Setter Property="Foreground" Value="{DynamicResource Text}"/><Setter Property="BorderBrush" Value="{DynamicResource Stroke}"/></Style>
   <Style TargetType="ListBoxItem"><Setter Property="Foreground" Value="{DynamicResource Text}"/></Style>
   <Style TargetType="DataGridCell"><Setter Property="Foreground" Value="{DynamicResource Text}"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="12,0"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="DataGridCell"><Border Padding="{TemplateBinding Padding}" Background="Transparent"><ContentPresenter VerticalAlignment="Center"/></Border></ControlTemplate></Setter.Value></Setter></Style>
-  <Style TargetType="DataGridRow"><Setter Property="Background" Value="{DynamicResource Surface}"/><Style.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{DynamicResource SurfaceHover}"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="{DynamicResource Selection}"/></Trigger></Style.Triggers></Style>
+  <Style TargetType="DataGridRow"><Setter Property="Background" Value="{DynamicResource Surface}"/><Style.Triggers><DataTrigger Binding="{Binding IsFolder}" Value="True"><Setter Property="Background" Value="{DynamicResource FolderSurface}"/></DataTrigger><Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{DynamicResource SurfaceHover}"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="{DynamicResource Selection}"/></Trigger></Style.Triggers></Style>
   <Style TargetType="DataGridColumnHeader"><Setter Property="Background" Value="{DynamicResource Canvas}"/><Setter Property="Foreground" Value="{DynamicResource Muted}"/><Setter Property="FontSize" Value="12"/><Setter Property="Padding" Value="12,0"/><Setter Property="BorderThickness" Value="0,0,0,1"/><Setter Property="BorderBrush" Value="{DynamicResource Stroke}"/></Style>
   <Style TargetType="DataGrid"><Setter Property="Background" Value="{DynamicResource Surface}"/><Setter Property="BorderThickness" Value="0"/><Setter Property="RowHeight" Value="52"/><Setter Property="ColumnHeaderHeight" Value="36"/><Setter Property="GridLinesVisibility" Value="Horizontal"/><Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource Stroke}"/><Setter Property="AutoGenerateColumns" Value="False"/><Setter Property="CanUserAddRows" Value="False"/><Setter Property="CanUserDeleteRows" Value="False"/><Setter Property="CanUserResizeRows" Value="False"/><Setter Property="IsReadOnly" Value="True"/><Setter Property="SelectionMode" Value="Single"/><Setter Property="HeadersVisibility" Value="Column"/></Style>
   <Style TargetType="ToolTip"><Setter Property="Background" Value="{DynamicResource Surface}"/><Setter Property="Foreground" Value="{DynamicResource Text}"/><Setter Property="BorderBrush" Value="{DynamicResource Stroke}"/><Setter Property="Padding" Value="10,6"/></Style>

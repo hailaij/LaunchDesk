@@ -8,6 +8,25 @@ namespace LaunchDesk;
 
 internal static class FormLayout
 {
+    public static int Number(TextBox input, string field, int minimum, int maximum)
+    {
+        if (int.TryParse(input.Text, out var value) && value >= minimum && value <= maximum) return value;
+        for (DependencyObject? parent = input; parent is not null; parent = LogicalTreeHelper.GetParent(parent))
+        {
+            if (parent is Expander section) section.IsExpanded = true;
+            if (parent is TabItem category) category.IsSelected = true;
+        }
+        input.UpdateLayout();
+        input.BringIntoView();
+        input.Focus(); input.SelectAll();
+        throw new InvalidDataException(F("{0}：请输入 {1} 至 {2} 的整数。", field, minimum, maximum));
+    }
+    public static StackPanel Advanced(Panel parent, string title, bool expanded)
+    {
+        var content = new StackPanel();
+        parent.Children.Add(new Expander { Header = title, IsExpanded = expanded, Content = content, Margin = new Thickness(0, 8, 0, 12) });
+        return content;
+    }
     public static void Section(Panel panel, string title)
     {
         var heading = new TextBlock { Text = title, FontSize = 15, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 8, 0, 16) };
@@ -45,17 +64,42 @@ internal static class FormLayout
         System.Windows.Automation.AutomationProperties.SetName(button, T("浏览"));
         button.Click += (_, _) => pick(); DockPanel.SetDock(button, Dock.Right); panel.Children.Add(button); panel.Children.Add(text); return panel;
     }
-    public static void Finish(Window window, Panel form, Action save)
+    public static TabControl Categories(Panel form)
+    {
+        var tabs = new TabControl { Style = (Style)Application.Current.FindResource("ConfigurationTabs") };
+        void Add(string title, UIElement content)
+        {
+            tabs.Items.Add(new TabItem { Header = title, Content = new ScrollViewer { Content = content,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Padding = new Thickness(0, 16, 14, 0) } });
+        }
+        var sections = form.Children.OfType<Expander>().ToArray();
+        foreach (var section in sections) form.Children.Remove(section);
+        Add(T("基本信息"), form);
+        foreach (var section in sections.OrderBy(x => x.Header?.ToString() == T("日志与环境") ? 1 : 0))
+        {
+            var content = (UIElement)section.Content!; section.Content = null;
+            var title = section.Header?.ToString() == T("日志与环境") ? T("日志 / 环境")
+                : section.Header?.ToString() == T("启动与停止") ? T("启动 / 停止")
+                : section.Header?.ToString() == T("服务就绪检测") ? T("就绪检测") : T("健康监控");
+            Add(title, content);
+        }
+        return tabs;
+    }
+    public static void Finish(Window window, Panel form, Action save, Button? extra = null, bool categorized = false)
     {
         window.SetResourceReference(Window.IconProperty, "AppIcon");
         var grid = new Grid();
         grid.RowDefinitions.Add(new()); grid.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        grid.Children.Add(new ScrollViewer { Content = form, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(0, 0, 14, 0) });
+        grid.Children.Add(categorized ? Categories(form) : new ScrollViewer { Content = form, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(0, 0, 14, 0) });
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
         var cancel = new Button { Content = T("取消"), IsCancel = true, MinWidth = 80 }; cancel.Click += (_, _) => window.Close();
         var commit = new Button { Content = T("保存"), IsDefault = true, MinWidth = 80, Style = (Style)System.Windows.Application.Current.FindResource("PrimaryButton") };
         commit.Click += (_, _) => save(); buttons.Children.Add(cancel); buttons.Children.Add(commit);
-        Grid.SetRow(buttons, 1); grid.Children.Add(buttons);
+        var footer = new DockPanel();
+        DockPanel.SetDock(buttons, Dock.Right); footer.Children.Add(buttons);
+        if (extra is not null) { extra.VerticalAlignment = VerticalAlignment.Bottom; footer.Children.Add(extra); }
+        Grid.SetRow(footer, 1); grid.Children.Add(footer);
         var surface = new Border { Padding = new Thickness(24), Child = grid };
         surface.SetResourceReference(Border.BackgroundProperty, "Canvas"); window.Content = surface;
         window.Loaded += (_, _) => Accessibility.Apply(window);
@@ -65,6 +109,9 @@ internal static class FormLayout
 public sealed class ItemDialog : Window
 {
     public LaunchItem Item { get; }
+    private Func<string>? fieldSnapshot;
+    private string initialSnapshot = "";
+    internal bool HasUnsavedChanges => fieldSnapshot is not null && fieldSnapshot() != initialSnapshot;
     public ItemDialog(LaunchItem item, List<LaunchItem> all, List<LaunchFolder>? folders = null)
     {
         folders ??= [];
@@ -96,24 +143,31 @@ public sealed class ItemDialog : Window
         var interpreter = FormLayout.Text(item.Interpreter);
         FormLayout.Row(form, T("解释器路径"), FormLayout.Browse(interpreter, () =>
         { var dialog = new OpenFileDialog { Filter = T("解释器|*.exe;*.cmd|所有文件|*.*") }; if (dialog.ShowDialog(this) == true) interpreter.Text = dialog.FileName; }));
-        FormLayout.Section(form, T("日志与环境"));
+        var basic = form;
+        form = FormLayout.Advanced(basic, T("日志与环境"), item.Environment.Count > 0);
         var encoding = new ComboBox { ItemsSource = new[] { "auto", "system", "utf-8", "gbk", "utf-16", "windows-1252" }, Text = item.Encoding, IsEditable = true };
         FormLayout.Row(form, T("日志 / 输入编码"), encoding);
         var env = FormLayout.Text(string.Join(Environment.NewLine, item.Environment.Select(x => x.Key + "=" + x.Value)), true);
         FormLayout.Row(form, T("环境变量"), env);
-        FormLayout.Section(form, T("启动与停止"));
+        form = FormLayout.Advanced(basic, T("启动与停止"), item.Dependencies.Count > 0 || item.StopInput.Length > 0 || item.RequireElevation
+            || item.StartupOrder != 0 || item.DelaySeconds != 0 || item.AutoStart || item.AutoRestart || item.ShowWindow);
         var dependencies = new ListBox { SelectionMode = SelectionMode.Multiple, Height = 90, DisplayMemberPath = "Name", ItemsSource = all.Where(x => x.Id != item.Id).ToArray() };
         foreach (var dependency in all.Where(x => item.Dependencies.Contains(x.Id))) dependencies.SelectedItems.Add(dependency);
         FormLayout.Row(form, T("依赖启动项"), dependencies);
         var startupOrder = FormLayout.Text(item.StartupOrder.ToString());
         startupOrder.ToolTip = T("0–9999，数字小的先启动；相同数字按列表顺序，显式依赖优先");
         FormLayout.Row(form, T("启动顺序"), startupOrder);
-        var numeric = new StackPanel { Orientation = Orientation.Horizontal };
+        var numeric = new WrapPanel();
         var delay = FormLayout.Text(item.DelaySeconds.ToString()); delay.Width = 70;
         var timeout = FormLayout.Text(item.StopTimeoutSeconds.ToString()); timeout.Width = 70;
-        numeric.Children.Add(delay); numeric.Children.Add(new TextBlock { Text = T("秒延迟"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 20, 0) });
-        numeric.Children.Add(timeout); numeric.Children.Add(new TextBlock { Text = T("秒停止超时"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) });
+        var delayGroup = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 20, 4) };
+        delayGroup.Children.Add(delay); delayGroup.Children.Add(new TextBlock { Text = T("秒延迟"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) });
+        var timeoutGroup = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
+        timeoutGroup.Children.Add(timeout); timeoutGroup.Children.Add(new TextBlock { Text = T("秒停止超时"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) });
+        numeric.Children.Add(delayGroup); numeric.Children.Add(timeoutGroup);
         FormLayout.Row(form, T("启动 / 停止"), numeric);
+        System.Windows.Automation.AutomationProperties.SetName(delay, T("启动延迟（秒）"));
+        System.Windows.Automation.AutomationProperties.SetName(timeout, T("停止超时（秒）"));
         var stop = FormLayout.Text(item.StopInput); FormLayout.Row(form, T("退出输入（可选）"), stop);
         var stopDelay = FormLayout.Text(item.StopInputDelaySeconds.ToString());
         stopDelay.ToolTip = T("0–300 秒；输入发送后才开始计算停止超时，进程提前退出则不再发送");
@@ -126,7 +180,7 @@ public sealed class ItemDialog : Window
         var visible = new CheckBox { Content = T("显示目标窗口"), IsChecked = item.ShowWindow };
         var elevated = new CheckBox { Content = T("每次启动请求管理员授权"), IsChecked = item.RequireElevation };
         options.Children.Add(auto); options.Children.Add(restart); options.Children.Add(visible); options.Children.Add(elevated); FormLayout.Row(form, T("选项"), options);
-        FormLayout.Section(form, T("服务就绪检测"));
+        form = FormLayout.Advanced(basic, T("服务就绪检测"), item.Readiness.Kind != ReadinessKind.None);
         var readinessKind = new ComboBox { ItemsSource = new[] { T("关闭检测"), T("TCP 端口"), T("HTTP 成功响应"), T("日志关键词") }, SelectedIndex = (int)item.Readiness.Kind };
         FormLayout.Row(form, T("检测方式"), readinessKind);
         var host = FormLayout.Text(item.Readiness.Host); var port = FormLayout.Text(item.Readiness.Port.ToString());
@@ -144,7 +198,7 @@ public sealed class ItemDialog : Window
             timeoutFields.Visibility = readinessKind.SelectedIndex != 0 ? Visibility.Visible : Visibility.Collapsed;
         }
         readinessKind.SelectionChanged += (_, _) => UpdateReadinessFields(); UpdateReadinessFields();
-        FormLayout.Section(form, T("运行健康监控"));
+        form = FormLayout.Advanced(basic, T("运行健康监控"), item.Health.Enabled);
         var healthEnabled = new CheckBox { Name = "HealthEnabled", Content = T("启用健康监控"), IsChecked = item.Health.Enabled };
         FormLayout.Row(form, T("健康监控"), healthEnabled);
         var healthFields = new StackPanel(); form.Children.Add(healthFields);
@@ -186,24 +240,28 @@ public sealed class ItemDialog : Window
             item.Note = note.Text.Trim();
             var folderId = ((LaunchFolder)folder.SelectedItem).Id; item.FolderId = folderId == Guid.Empty ? null : folderId;
             item.Arguments = args.Text; item.WorkingDirectory = directory.Text.Trim(); item.Interpreter = interpreter.Text.Trim(); item.Encoding = encoding.Text.Trim();
-            item.DelaySeconds = int.Parse(delay.Text); item.StopTimeoutSeconds = int.Parse(timeout.Text); item.StopInput = stop.Text;
-            item.StopInputDelaySeconds = int.Parse(stopDelay.Text); item.SendStopSignalBeforeInput = signalFirst.IsChecked == true;
-            item.StartupOrder = int.Parse(startupOrder.Text);
+            item.DelaySeconds = FormLayout.Number(delay, T("启动延迟（秒）"), 0, 3600); item.StopTimeoutSeconds = FormLayout.Number(timeout, T("停止超时（秒）"), 1, 300); item.StopInput = stop.Text;
+            item.StopInputDelaySeconds = FormLayout.Number(stopDelay, T("退出输入延迟（秒）"), 0, 300); item.SendStopSignalBeforeInput = signalFirst.IsChecked == true;
+            item.StartupOrder = FormLayout.Number(startupOrder, T("启动顺序"), 0, 9999);
             item.AutoStart = auto.IsChecked == true; item.AutoRestart = restart.IsChecked == true; item.ShowWindow = visible.IsChecked == true;
             item.RequireElevation = elevated.IsChecked == true;
             item.Dependencies = dependencies.SelectedItems.Cast<LaunchItem>().Select(x => x.Id).ToList();
             item.Readiness = new() { Kind = (ReadinessKind)readinessKind.SelectedIndex, Host = host.Text.Trim(),
-                Port = readinessKind.SelectedIndex == 1 ? int.Parse(port.Text) : item.Readiness.Port, Url = url.Text.Trim(), Keyword = keyword.Text,
-                TimeoutSeconds = readinessKind.SelectedIndex == 0 ? item.Readiness.TimeoutSeconds : int.Parse(readyTimeout.Text) };
+                Port = readinessKind.SelectedIndex == 1 ? FormLayout.Number(port, T("端口"), 1, 65535) : item.Readiness.Port, Url = url.Text.Trim(), Keyword = keyword.Text,
+                TimeoutSeconds = readinessKind.SelectedIndex == 0 ? item.Readiness.TimeoutSeconds : FormLayout.Number(readyTimeout, T("就绪超时（秒）"), 1, 300) };
             item.Health = new()
             {
                 Enabled = healthEnabled.IsChecked == true, ReuseReadiness = healthReuse.IsChecked == true,
                 Kind = healthKind.SelectedIndex == 0 ? ReadinessKind.Tcp : ReadinessKind.Http,
-                Host = healthHost.Text.Trim(), Port = int.Parse(healthPort.Text), Url = healthUrl.Text.Trim(),
-                IntervalSeconds = int.Parse(interval.Text), TimeoutSeconds = int.Parse(healthTimeout.Text),
-                FailureThreshold = int.Parse(failures.Text), RecoveryThreshold = int.Parse(recovery.Text),
+                Host = healthHost.Text.Trim(), Port = healthEnabled.IsChecked == true && healthReuse.IsChecked != true && healthKind.SelectedIndex == 0
+                    ? FormLayout.Number(healthPort, T("端口"), 1, 65535) : item.Health.Port, Url = healthUrl.Text.Trim(),
+                IntervalSeconds = healthEnabled.IsChecked == true ? FormLayout.Number(interval, T("检查间隔（秒）"), 1, 3600) : item.Health.IntervalSeconds,
+                TimeoutSeconds = healthEnabled.IsChecked == true ? FormLayout.Number(healthTimeout, T("检查超时（秒）"), 1, 300) : item.Health.TimeoutSeconds,
+                FailureThreshold = healthEnabled.IsChecked == true ? FormLayout.Number(failures, T("连续失败次数"), 1, 100) : item.Health.FailureThreshold,
+                RecoveryThreshold = healthEnabled.IsChecked == true ? FormLayout.Number(recovery, T("连续恢复次数"), 1, 100) : item.Health.RecoveryThreshold,
                 AutoRestart = healthEnabled.IsChecked == true && healthRestart.IsChecked == true,
-                RestartCooldownSeconds = int.Parse(cooldown.Text), MaxRestartsPerTenMinutes = int.Parse(restartLimit.Text)
+                RestartCooldownSeconds = healthEnabled.IsChecked == true && healthRestart.IsChecked == true ? FormLayout.Number(cooldown, T("重启冷却（秒）"), 1, 3600) : item.Health.RestartCooldownSeconds,
+                MaxRestartsPerTenMinutes = healthEnabled.IsChecked == true && healthRestart.IsChecked == true ? FormLayout.Number(restartLimit, T("10 分钟重启上限"), 1, 10) : item.Health.MaxRestartsPerTenMinutes
             };
             item.Environment = new(StringComparer.OrdinalIgnoreCase);
             foreach (var line in env.Text.Split('\n').Select(x => x.TrimEnd('\r')).Where(x => !string.IsNullOrWhiteSpace(x)))
@@ -220,8 +278,7 @@ public sealed class ItemDialog : Window
             try { ApplyFields(); MessageBox.Show(this, T("检查通过。"), T("启动前检查"), MessageBoxButton.OK, MessageBoxImage.Information); }
             catch (Exception error) { MessageBox.Show(this, ErrorText(error.Message), T("启动前检查失败"), MessageBoxButton.OK, MessageBoxImage.Warning); }
         };
-        FormLayout.Row(form, T("配置检查"), check);
-        FormLayout.Finish(this, form, () =>
+        FormLayout.Finish(this, basic, () =>
         {
             try
             {
@@ -229,7 +286,22 @@ public sealed class ItemDialog : Window
                 DialogResult = true;
             }
             catch (Exception error) { MessageBox.Show(this, ErrorText(error.Message), T("配置无效"), MessageBoxButton.OK, MessageBoxImage.Warning); }
+        }, check, categorized: true);
+        fieldSnapshot = () => System.Text.Json.JsonSerializer.Serialize(new
+        {
+            text = new[] { name, note, target, args, directory, interpreter, env, startupOrder, delay, timeout, stop, stopDelay,
+                host, port, url, keyword, readyTimeout, healthHost, healthPort, healthUrl, interval, healthTimeout, failures, recovery, cooldown, restartLimit }.Select(x => x.Text).ToArray(),
+            encoding = encoding.Text,
+            choices = new[] { folder, kind, readinessKind, healthKind }.Select(x => x.SelectedIndex).ToArray(),
+            flags = new[] { signalFirst, auto, restart, visible, elevated, healthEnabled, healthReuse, healthRestart }.Select(x => x.IsChecked).ToArray(),
+            dependencies = dependencies.SelectedItems.Cast<LaunchItem>().Select(x => x.Id).Order().ToArray()
         });
+        initialSnapshot = fieldSnapshot();
+        Closing += (_, e) =>
+        {
+            if (DialogResult != true && HasUnsavedChanges && MessageBox.Show(this, T("存在未保存的修改，确定放弃并关闭？"),
+                T("未保存修改"), MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes) e.Cancel = true;
+        };
     }
 }
 
@@ -272,8 +344,10 @@ public sealed class SettingsDialog : Window
         var minimized = new CheckBox { Content = T("启动时收起到托盘"), IsChecked = preferences.StartMinimized };
         var tray = new CheckBox { Content = T("最小化时收起到托盘"), IsChecked = preferences.MinimizeToTray };
         var mode = new CheckBox { Content = T("便携模式"), IsChecked = portable };
-        FormLayout.Row(form, T("启动"), login); FormLayout.Row(form, T("窗口"), minimized); FormLayout.Row(form, "", tray); FormLayout.Row(form, T("数据目录"), mode);
+        var windowOptions = new StackPanel(); windowOptions.Children.Add(minimized); windowOptions.Children.Add(tray);
+        FormLayout.Row(form, T("启动"), login); FormLayout.Row(form, T("窗口"), windowOptions);
         FormLayout.Section(form, T("数据与备份"));
+        FormLayout.Row(form, T("数据目录"), mode);
         var root = dataRoot ?? (portable ? Path.Combine(AppContext.BaseDirectory, "data") : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LaunchDesk"));
         var dataPath = new TextBox { Text = root, TextWrapping = TextWrapping.Wrap, MinHeight = 52 };
         var originalUserRoot = portable ? DataLocation.Resolve(AppContext.BaseDirectory, false) : root;
@@ -321,7 +395,7 @@ public sealed class SettingsDialog : Window
             try
             {
                 var value = new Preferences { Language = languages[language.SelectedIndex], Theme = themes[theme.SelectedIndex], StartAtLogin = login.IsChecked == true, StartMinimized = minimized.IsChecked == true,
-                    MinimizeToTray = tray.IsChecked == true, CheckUpdatesOnStartup = automaticUpdates.IsChecked == true, LogDays = int.Parse(days.Text), LogLimitMiB = int.Parse(size.Text) };
+                    MinimizeToTray = tray.IsChecked == true, CheckUpdatesOnStartup = automaticUpdates.IsChecked == true, LogDays = FormLayout.Number(days, T("日志保留（天）"), 1, 365), LogLimitMiB = FormLayout.Number(size, T("每项上限（MiB）"), 10, 10240) };
                 ConfigurationStore.Validate(new() { Preferences = value });
                 if (string.IsNullOrWhiteSpace(dataPath.Text) || !Path.IsPathFullyQualified(Environment.ExpandEnvironmentVariables(dataPath.Text.Trim())))
                     throw new InvalidDataException(T("数据目录必须是绝对路径。"));

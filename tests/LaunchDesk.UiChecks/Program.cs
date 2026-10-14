@@ -78,7 +78,7 @@ internal static class UiChecks
         if (iconFont.Source != "Segoe MDL2 Assets" || !new System.Windows.Media.Typeface(iconFont, System.Windows.FontStyles.Normal,
             System.Windows.FontWeights.Normal, System.Windows.FontStretches.Normal).TryGetGlyphTypeface(out var glyphs)) return 1;
         foreach (var code in new[] { 0xE70D, 0xE73E, 0xE76C, 0xE8B7, 0xE756, 0xE8B5, 0xEDE1, 0xE777, 0xE713,
-            0xE8F4, 0xE768, 0xE71A, 0xE710, 0xE70F, 0xE8C8, 0xE74D, 0xE70E, 0xE721, 0xE72C, 0xE74E, 0xE894, 0xE122 })
+            0xE8F4, 0xE768, 0xE71A, 0xE710, 0xE70F, 0xE8C8, 0xE74D, 0xE70E, 0xE721, 0xE72C, 0xE74E, 0xE894, 0xE122, 0xE712 })
             if (!glyphs.CharacterToGlyphMap.TryGetValue(code, out var index) || index == 0) throw new InvalidDataException($"Missing icon glyph: {code:X4}");
         var loaded = args[0] == "--loaded";
         if (loaded) config.Items.Add(new() { Name = "fault", Target = "cmd" });

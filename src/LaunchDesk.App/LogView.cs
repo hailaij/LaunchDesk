@@ -14,11 +14,12 @@ namespace LaunchDesk;
 
 public sealed class LogView : ListBox
 {
-    private sealed class Line(string value)
+    private sealed class Line(ProjectedLogLine value)
     {
-        public string Text { get; } = value;
+        public ProjectedLogLine Value { get; } = value;
+        public string Text => Value.Text;
         public override string ToString() => Text;
-        public int AsciiCount { get; } = value.Count(c => c <= 127);
+        public int AsciiCount { get; } = value.Text.Count(c => c <= 127);
         public int WideCount => Text.Length - AsciiCount;
     }
     private sealed class LineCollection : IList, INotifyCollectionChanged
@@ -27,7 +28,7 @@ public sealed class LogView : ListBox
         private int head;
         public IEnumerable<Line> Values => values.Skip(head);
         public int Resets { get; private set; }
-        public void Replace(string[] values)
+        public void Replace(ProjectedLogLine[] values)
         {
             // Match the old suffix to the new prefix, including repeated/blank lines.
             // Prefix links keep repeated output linear rather than trying every match.
@@ -43,7 +44,7 @@ public sealed class LogView : ListBox
             for (var i = 0; i < Count && values.Length > 0; i++)
             {
                 beforeLast = retained;
-                var current = this.values[head + i].Text;
+                var current = this.values[head + i].Value;
                 while (retained > 0 && (retained == values.Length || current != values[retained])) retained = prefix[retained - 1];
                 if (current == values[retained]) retained++;
             }
@@ -117,8 +118,10 @@ public sealed class LogView : ListBox
         set => SetLines(value.Length == 0 ? [] : value.Split('\n'));
     }
     public void SetLines(string[] incoming)
+        => SetProjectedLines(incoming.Select(x => new ProjectedLogLine(x, 0, "")).ToArray());
+    public void SetProjectedLines(ProjectedLogLine[] incoming)
     {
-        if (incoming.Length == lines.Count && !incoming.Where((value, index) => value != ((Line)lines[index]!).Text).Any()) return;
+        if (incoming.Length == lines.Count && !incoming.Where((value, index) => value != ((Line)lines[index]!).Value).Any()) return;
         var offset = VerticalOffset;
         var top = Math.Clamp((int)offset, 0, Math.Max(0, lines.Count - 1));
         var anchor = lines.Count == 0 ? null : (Line)lines[top]!;
@@ -148,7 +151,10 @@ public sealed class LogView : ListBox
         var content = new FrameworkElementFactory(typeof(LogLineView));
         content.SetValue(HorizontalAlignmentProperty, HorizontalAlignment.Left);
         content.SetBinding(LogLineView.ValueProperty, new Binding("Text"));
-        content.SetBinding(ForegroundProperty, Ancestor(nameof(Foreground)));
+        content.SetBinding(LogLineView.PrefixLengthProperty, new Binding("Value.PrefixLength"));
+        content.SetBinding(LogLineView.ChannelProperty, new Binding("Value.Channel"));
+        content.SetBinding(LogLineView.IsRowSelectedProperty, new Binding("IsSelected") { RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor, typeof(ListBoxItem), 1) });
+        content.SetBinding(ForegroundProperty, new Binding("Foreground") { RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor, typeof(ListBoxItem), 1) });
         ItemTemplate = new DataTemplate { VisualTree = content };
         var container = new Style(typeof(ListBoxItem));
         container.Setters.Add(new Setter(System.Windows.Automation.AutomationProperties.NameProperty, new Binding("Text")));
@@ -162,7 +168,7 @@ public sealed class LogView : ListBox
         border.SetBinding(Border.BackgroundProperty, new Binding(nameof(Background)) { RelativeSource = RelativeSource.TemplatedParent });
         border.AppendChild(new FrameworkElementFactory(typeof(ContentPresenter)));
         container.Setters.Add(new Setter(TemplateProperty, new ControlTemplate(typeof(ListBoxItem)) { VisualTree = border }));
-        container.Triggers.Add(new Trigger { Property = ListBoxItem.IsSelectedProperty, Value = true, Setters = { new Setter(BackgroundProperty, new SolidColorBrush(Color.FromArgb(150, 37, 94, 128))) } });
+        container.Triggers.Add(new Trigger { Property = ListBoxItem.IsSelectedProperty, Value = true, Setters = { new Setter(BackgroundProperty, new DynamicResourceExtension("LogSelection")), new Setter(ForegroundProperty, new DynamicResourceExtension("LogSelectedText")) } });
         ItemContainerStyle = container;
         CommandBindings.Add(new(ApplicationCommands.Copy, (_, _) => CopySelection(), (_, e) => e.CanExecute = SelectedItems.Count > 0 || VisualChildren<LogLineView>(this).Any(x => !x.Selection.IsEmpty)));
         CommandBindings.Add(new(ApplicationCommands.SelectAll, (_, _) => SelectAll(), (_, e) => e.CanExecute = Items.Count > 0));
@@ -266,6 +272,13 @@ public sealed class LogView : ListBox
 
 public sealed class LogLineView : RichTextBox
 {
+    private readonly List<Run> prefixRuns = [];
+    public static readonly DependencyProperty IsRowSelectedProperty = DependencyProperty.Register(nameof(IsRowSelected), typeof(bool), typeof(LogLineView), new PropertyMetadata(false, (d, _) => ((LogLineView)d).ApplyChannelColor()));
+    public bool IsRowSelected { get => (bool)GetValue(IsRowSelectedProperty); set => SetValue(IsRowSelectedProperty, value); }
+    public static readonly DependencyProperty PrefixLengthProperty = DependencyProperty.Register(nameof(PrefixLength), typeof(int), typeof(LogLineView), new PropertyMetadata(0, (d, _) => ((LogLineView)d).Render(((LogLineView)d).Value)));
+    public static readonly DependencyProperty ChannelProperty = DependencyProperty.Register(nameof(Channel), typeof(string), typeof(LogLineView), new PropertyMetadata("", (d, _) => ((LogLineView)d).ApplyChannelColor()));
+    public int PrefixLength { get => (int)GetValue(PrefixLengthProperty); set => SetValue(PrefixLengthProperty, value); }
+    public string Channel { get => (string)GetValue(ChannelProperty); set => SetValue(ChannelProperty, value); }
     public static readonly DependencyProperty ValueProperty = DependencyProperty.Register(nameof(Value), typeof(string), typeof(LogLineView), new PropertyMetadata("", (d, e) => ((LogLineView)d).Render((string)e.NewValue)));
     public string Value { get => (string)GetValue(ValueProperty); set => SetValue(ValueProperty, value); }
     public LogLineView()
@@ -290,12 +303,20 @@ public sealed class LogLineView : RichTextBox
     private void Render(string value)
     {
         var paragraph = new Paragraph { Margin = new Thickness(0) }; var offset = 0;
+        prefixRuns.Clear();
         Document.Blocks.Clear(); Document.Blocks.Add(paragraph);
+        void AddText(int start, int length)
+        {
+            var colored = Math.Clamp(PrefixLength - start, 0, length);
+            if (colored > 0) { var run = new Run(value.Substring(start, colored)); paragraph.Inlines.Add(run); prefixRuns.Add(run); }
+            if (colored < length) paragraph.Inlines.Add(new Run(value.Substring(start + colored, length - colored).TrimEnd('\r')));
+        }
         foreach (var link in LogLinks.Find(value))
         {
-            paragraph.Inlines.Add(new Run(value[offset..link.Start]));
+            AddText(offset, link.Start - offset);
             var hyperlink = new Hyperlink(new Run(value.Substring(link.Start, link.Length)))
-            { NavigateUri = link.Uri, Foreground = new SolidColorBrush(Color.FromRgb(113, 199, 255)), ToolTip = link.Uri.AbsoluteUri + T("\nCtrl+点击打开"), Cursor = Cursors.Hand };
+            { NavigateUri = link.Uri, ToolTip = link.Uri.AbsoluteUri + T("\nCtrl+点击打开"), Cursor = Cursors.Hand };
+            hyperlink.SetResourceReference(ForegroundProperty, "LogLink");
             hyperlink.Click += (_, e) =>
             {
                 e.Handled = true;
@@ -306,8 +327,18 @@ public sealed class LogLineView : RichTextBox
             hyperlink.RequestNavigate += (_, e) => e.Handled = true;
             paragraph.Inlines.Add(hyperlink); offset = link.Start + link.Length;
         }
-        paragraph.Inlines.Add(new Run(value[offset..].TrimEnd('\r')));
+        AddText(offset, value.Length - offset);
+        ApplyChannelColor();
         MeasureWidth();
+    }
+    private void ApplyChannelColor()
+    {
+        if (Document is null) return;
+        // Only the provenance prefix is colored; stdout text is not severity-parsed.
+        var key = IsRowSelected ? "LogSelectedText" : Channel switch { "stderr" => "LogError", "system" => "LogSystem", "stdin" => "LogInput", _ => "TerminalText" };
+        foreach (var run in prefixRuns) run.SetResourceReference(ForegroundProperty, key);
+        if (Document.Blocks.FirstBlock is Paragraph paragraph)
+            foreach (var link in paragraph.Inlines.OfType<Hyperlink>()) link.SetResourceReference(ForegroundProperty, IsRowSelected ? "LogSelectedText" : "LogLink");
     }
     protected override void OnPropertyChanged(DependencyPropertyChangedEventArgs e)
     {

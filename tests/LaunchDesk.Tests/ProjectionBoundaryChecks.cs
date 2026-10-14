@@ -3,12 +3,11 @@ using LaunchDesk.Core;
 
 internal static class ProjectionBoundaryChecks
 {
-    public static Task Run(string root, Func<string, Func<Task>, Task> test)
-        => test("Log projection boundary preserves prefixes Unicode and original exports", () =>
-        {
-            static void Check(bool value, string message) { if (!value) throw new InvalidDataException(message); }
-            foreach (var merged in new[] { false, true })
-            foreach (var length in new[] { 499980, 499999, 500000 })
+    public static async Task Run(string root, Func<string, Func<Task>, Task> test)
+    {
+        foreach (var merged in new[] { false, true })
+        foreach (var length in new[] { 499980, 499999, 500000 })
+            await test($"Log projection boundary: length={length}, merged={merged}", () =>
             {
                 var id = Guid.NewGuid(); using var log = new LogStore(root, id, new());
                 var text = string.Concat(Enumerable.Repeat("中文🙂", length / 4)) + new string('x', length % 4);
@@ -19,6 +18,9 @@ internal static class ProjectionBoundaryChecks
                 log.Export(before);
                 var projection = new LogProjection();
                 var lines = projection.Update([(id, "来源中文🙂", log)], merged, null, "");
+                var typed = projection.UpdateLines([(id, "来源中文🙂", log)], merged, null, "");
+                Check(typed.Select(x => x.Text).SequenceEqual(lines) && typed[0].Channel == "stdout"
+                    && typed[0].PrefixLength == prefix.Length, "typed projection lost prefix/channel contract");
                 Check(lines[0].StartsWith(prefix, StringComparison.Ordinal), $"prefix damaged: merged={merged}, length={length}");
                 Check(lines[0].Contains("[... truncated ...] ", StringComparison.Ordinal), "truncation not marked");
                 Check(lines.Sum(x => x.Length + 1) <= 500001, "display budget exceeded");
@@ -28,8 +30,10 @@ internal static class ProjectionBoundaryChecks
                 log.Export(after);
                 Check(File.ReadAllBytes(before).SequenceEqual(File.ReadAllBytes(after)), "projection changed persisted export");
                 Check(log.Snapshot().Single().Text == text && record.RawBytes!.SequenceEqual(Encoding.UTF8.GetBytes(text)), "original changed");
-            }
-            foreach (var sizes in new[] { (249995, 250000), (40, 499960) })
+                return Task.CompletedTask;
+            });
+        foreach (var sizes in new[] { (249995, 250000), (40, 499960) })
+            await test($"Log projection boundary: merged sizes={sizes.Item1}/{sizes.Item2}", () =>
             {
                 var a = Guid.NewGuid(); var b = Guid.NewGuid();
                 using var first = new LogStore(root, a, new()); using var second = new LogStore(root, b, new());
@@ -46,7 +50,10 @@ internal static class ProjectionBoundaryChecks
                 else Check(lines.All(x => !x.StartsWith(aPrefix)), "insufficient prefix budget must omit whole old line");
                 LogStore.ExportMerged(sources, after);
                 Check(File.ReadAllBytes(before).SequenceEqual(File.ReadAllBytes(after)), "merged export changed");
-            }
+                return Task.CompletedTask;
+            });
+        await test("Log projection boundary: oversized record persists outside display", () =>
+        {
             var oversizedId = Guid.NewGuid(); using var oversized = new LogStore(root, oversizedId, new());
             var large = new string('中', 500001); oversized.Write("stdout", large);
             var oversizedExport = Path.Combine(root, oversizedId + "-oversized.jsonl"); oversized.Export(oversizedExport);
@@ -54,6 +61,9 @@ internal static class ProjectionBoundaryChecks
             Check(System.Text.Json.JsonSerializer.Deserialize<LogRecord>(File.ReadLines(oversizedExport).Single())!.Text == large, "oversized disk record lost");
             return Task.CompletedTask;
         });
+    }
+
+    private static void Check(bool value, string message) { if (!value) throw new InvalidDataException(message); }
 
     private static bool ValidUtf16(string text)
     {

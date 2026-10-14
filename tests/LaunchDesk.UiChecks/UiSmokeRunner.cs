@@ -83,6 +83,7 @@ internal sealed class UiSmokeRunner
     private Task ExitAsync(int exitCode = 0, Exception? fatalError = null) => (Task)Invoke("ExitAsync", exitCode, fatalError)!;
     private async Task RunSmokeAsync()
     {
+        await UsabilityChecks.Run(Window, Path.ChangeExtension(smokePath, null) + "-usability.json");
             CreateTray();
             if (Icon is null || trayIcon is null) throw new InvalidOperationException(T("应用图标测试失败。"));
             Populate();
@@ -143,6 +144,7 @@ internal sealed class UiSmokeRunner
             if (LogBox.Text != paused) throw new InvalidOperationException(T("暂停显示测试失败。"));
             PauseLog.IsChecked = false;
             if (!LogBox.Text.Contains(T("暂停期间捕获"))) throw new InvalidOperationException(T("恢复显示测试失败。"));
+            UsabilityChecks.VerifyList(Window, Path.ChangeExtension(smokePath, null) + "-modern-list.json");
             Capture(Window, smokePath);
             var healthRow = rows.First(x => !x.IsFolder);
             healthRow.Refresh(new(RunStatus.Running, 1234, null, DateTimeOffset.Now, "", true)
@@ -154,20 +156,15 @@ internal sealed class UiSmokeRunner
             healthPreview.Health = new() { Enabled = true, ReuseReadiness = false, Kind = ReadinessKind.Http, AutoRestart = true };
             var healthEditor = new ItemDialog(healthPreview, config.Items, config.Folders) { Owner = Window };
             healthEditor.Show();
-            if (healthEditor.Content is Border { Child: Grid healthGrid } && healthGrid.Children[0] is ScrollViewer { Content: StackPanel healthForm } healthScroll)
-            {
-                var healthSection = healthForm.Children.OfType<Grid>().Single(x => x.Children[0] is TextBlock label && label.Text == T("健康监控"));
-                healthEditor.UpdateLayout(); healthScroll.ScrollToVerticalOffset(healthSection.TranslatePoint(new Point(0, 0), healthForm).Y - 30);
-                await Task.Delay(250); Capture(healthEditor, Path.ChangeExtension(smokePath, null) + "-health-settings.png");
-            }
+            ((TabItem)LogView.VisualChildren<TabControl>(healthEditor).Single().Items[3]).IsSelected = true;
+            await Task.Delay(250); Capture(healthEditor, Path.ChangeExtension(smokePath, null) + "-health-settings.png");
             healthEditor.Close();
             var editor = new ItemDialog(ConfigurationStore.Clone(config.Items[0]), config.Items, config.Folders) { Owner = Window };
             editor.Show(); await Task.Delay(250); Capture(editor, Path.ChangeExtension(smokePath, null) + "-editor.png");
-            if (editor.Content is Border { Child: Grid editorGrid } && editorGrid.Children[0] is ScrollViewer { Content: StackPanel editorForm })
-            {
-                editorForm.Children.OfType<Grid>().Single(x => x.Children[0] is TextBlock label && label.Text == T("退出信号")).BringIntoView();
-                await Task.Delay(250); Capture(editor, Path.ChangeExtension(smokePath, null) + "-stop-options.png");
-            }
+            ((TabItem)LogView.VisualChildren<TabControl>(editor).Single().Items[1]).IsSelected = true;
+            editor.UpdateLayout();
+            LogView.VisualChildren<Grid>(editor).Single(x => x.Children.Count > 0 && x.Children[0] is TextBlock label && label.Text == T("退出信号")).BringIntoView();
+            await Task.Delay(250); Capture(editor, Path.ChangeExtension(smokePath, null) + "-stop-options.png");
             editor.Close();
             var settings = new SettingsDialog(config.Preferences, portable, store.Root, () => store.BackupNow(config)) { Owner = Window };
             settings.Show(); await Task.Delay(250); Capture(settings, Path.ChangeExtension(smokePath, null) + "-settings.png"); settings.Close();
@@ -193,7 +190,7 @@ internal sealed class UiSmokeRunner
             var readyItem = ConfigurationStore.Clone(child.Item); readyItem.Readiness = new() { Kind = ReadinessKind.Log, Keyword = "READY" };
             var readinessEditor = new ItemDialog(readyItem, config.Items, config.Folders) { Owner = Window };
             readinessEditor.Show();
-            if (readinessEditor.Content is Border { Child: Grid formGrid } && formGrid.Children[0] is ScrollViewer formScroll) formScroll.ScrollToEnd();
+            ((TabItem)LogView.VisualChildren<TabControl>(readinessEditor).Single().Items[2]).IsSelected = true;
             await Task.Delay(250); Capture(readinessEditor, Path.ChangeExtension(smokePath, null) + "-readiness.png"); readinessEditor.Close();
             var secondMember = config.Items.Single(x => x.Kind == LaunchKind.Command); secondMember.FolderId = folder.Id;
             manager.Logs(secondMember.Id).Write("stdout", T("第二项输出 http://127.0.0.1:4000/pro/\n"));

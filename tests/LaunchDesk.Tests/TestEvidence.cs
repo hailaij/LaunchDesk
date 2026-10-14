@@ -28,8 +28,16 @@ internal static class TestEvidence
         }
         var paths = (await Run("git", "ls-files", "--cached", "--others", "--exclude-standard", "--", "src", "tests", "scripts", "tools", "build", ".github", "Directory.Build.props", "Directory.Build.targets", "global.json", "LaunchDesk.slnx"))
             .Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(x => x.TrimEnd('\r')).Distinct().OrderBy(x => x, StringComparer.Ordinal);
-        var hashes = paths.Where(x => File.Exists(Path.Combine(root, x))).Select(x => new { path = x,
-            sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(root, x)))) }).ToArray();
+        var hashTimer = Stopwatch.StartNew();
+        var hashAllocated = GC.GetAllocatedBytesForCurrentThread();
+        var hashes = paths.Where(x => File.Exists(Path.Combine(root, x))).Select(x =>
+        {
+            using var input = File.OpenRead(Path.Combine(root, x));
+            return new { path = x, sha256 = Convert.ToHexString(SHA256.HashData(input)) };
+        }).ToArray();
+        hashTimer.Stop();
+        var sourceHashCost = new { files = hashes.Length, elapsedMs = hashTimer.Elapsed.TotalMilliseconds,
+            allocatedBytes = GC.GetAllocatedBytesForCurrentThread() - hashAllocated, mode = "stream", completeInventory = true };
         var metadata = new
         {
             schemaVersion = 1, startedAt, finishedAt = DateTimeOffset.UtcNow, commit = await Run("git", "rev-parse", "HEAD"),
@@ -38,7 +46,7 @@ internal static class TestEvidence
             os = RuntimeInformation.OSDescription, architecture = RuntimeInformation.ProcessArchitecture.ToString(),
             runner = Environment.GetEnvironmentVariable("RUNNER_ENVIRONMENT") ?? "local", image = Environment.GetEnvironmentVariable("ImageOS"),
             imageVersion = Environment.GetEnvironmentVariable("ImageVersion"), workflowCommit = Environment.GetEnvironmentVariable("GITHUB_SHA"),
-            reportSha256 = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(report))), sourceHashes = hashes
+            reportSha256 = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(report))), sourceHashes = hashes, sourceHashCost
         };
         await File.WriteAllTextAsync(report + ".metadata.json", JsonSerializer.Serialize(metadata, new JsonSerializerOptions { WriteIndented = true }));
     }

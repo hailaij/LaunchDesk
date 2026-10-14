@@ -60,6 +60,7 @@ internal static class CorrectnessChecks
             await using var manager = new ProcessManager(new() { Items = [item] }, root);
             await manager.StartAsync(item.Id); await manager.StopAsync(item.Id);
             Check(manager.Snapshot(item.Id).ExitCode is < 0, "Forced termination still uses ambiguous exit code 1");
+            Check(manager.Logs(item.Id).Snapshot().Any(x => x.Channel == "system" && x.Text == "退出码 0xE04C4401\n"), "Forced exit log format differs from UI");
         });
         await test("Correctness: corrupt log line skipped and valid export remains complete", () =>
         {

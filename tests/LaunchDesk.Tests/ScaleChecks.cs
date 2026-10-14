@@ -27,7 +27,7 @@ internal static class ScaleChecks
         if (seconds < 30 || seconds > 86400 || mib < 1 || mib > 1024) throw new ArgumentOutOfRangeException(nameof(seconds));
         var started = DateTimeOffset.UtcNow;
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(report))!);
-        var root = Path.Combine(Path.GetTempPath(), "LaunchDesk-scale-" + Guid.NewGuid().ToString("N"));
+        var workspace = new TestWorkspace("scale"); var root = workspace.Root;
         var drive = new DriveInfo(Path.GetPathRoot(root)!);
         if (drive.AvailableFreeSpace < mib * 1024L * 1024 * 8 + 512 * 1024 * 1024) throw new IOException("Insufficient isolated test disk space");
         var item = worker("--worker scale " + mib); item.StopInput = "exit"; item.StopTimeoutSeconds = 10;
@@ -50,7 +50,7 @@ internal static class ScaleChecks
                 using var process = Process.GetCurrentProcess(); process.Refresh();
                 lastMemory = process.PrivateMemorySize64; lastHandles = process.HandleCount;
                 var retained = manager.Logs(item.Id).Snapshot().Length;
-                if (projection.CachedRecords > 3000 || retained > 3000) throw new InvalidDataException("Unbounded record cache");
+                if (projection.CachedRecords > LogStore.MaximumMemoryRecords || retained > LogStore.MaximumMemoryRecords) throw new InvalidDataException("Unbounded record cache");
                 if (watch.Elapsed.TotalSeconds >= seconds / 2 && warmMemory == 0) { warmMemory = lastMemory; warmHandles = lastHandles; }
                 samples.Add(new { seconds = watch.Elapsed.TotalSeconds, privateBytes = lastMemory, managedBytes = GC.GetTotalMemory(false),
                     handles = lastHandles, cachedRecords = projection.CachedRecords, retainedRecords = retained, formatted = projection.FormattedRecords });
@@ -102,5 +102,6 @@ internal static class ScaleChecks
         try { using var process = Process.GetProcessById(pid); if (!process.HasExited) throw new InvalidDataException("Scale worker survived disposal"); }
         catch (ArgumentException) { }
         await TestEvidence.WriteAsync(report, started, "scale-soak");
+        Console.WriteLine("Scale data: " + workspace.Finish(report, true));
     }
 }

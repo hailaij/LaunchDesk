@@ -15,6 +15,11 @@ function Run-App([string]$Mode, [string]$Report) {
 foreach ($mode in @('--ui-smoke', '--ui-smoke-en-min')) {
     $path = Join-Path $output ($mode.TrimStart('-') + '.png')
     Run-App $mode $path
+    $usabilityPath = Join-Path ([IO.Path]::GetDirectoryName($path)) ([IO.Path]::GetFileNameWithoutExtension($path) + '-usability.json')
+    $usability = Get-Content -LiteralPath $usabilityPath -Raw | ConvertFrom-Json
+    if ($usability.status -ne 'passed' -or @($usability.checks).Count -lt 32) { throw 'UI usability evidence missing/incomplete' }
+    $listEvidence = Get-Content -LiteralPath (Join-Path ([IO.Path]::GetDirectoryName($path)) ([IO.Path]::GetFileNameWithoutExtension($path) + '-modern-list.json')) -Raw | ConvertFrom-Json
+    if ($listEvidence.status -ne 'passed' -or -not $listEvidence.lastActionFitsCell -or -not $listEvidence.folderMemberCount -or -not $listEvidence.selectedActionsEmphasized) { throw 'Modern list evidence missing/incomplete' }
     $bitmap = [Drawing.Bitmap]::new($path)
     try {
         if ($bitmap.Width -lt 800 -or $bitmap.Height -lt 500) { throw 'Screenshot dimensions too small' }

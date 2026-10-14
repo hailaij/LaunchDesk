@@ -242,7 +242,7 @@ public sealed class ProcessManager : IAsyncDisposable
                     await pumps.ConfigureAwait(false);
                     exitCode = native.ExitCode;
                     if (native.ForcedTermination) r.Logs.Write("system", "管理器已强制终止进程树（0xE04C4401）。\n");
-                    r.Logs.Write("system", $"退出码 {exitCode}\n");
+                    r.Logs.Write("system", $"退出码 {ExitCodeDisplay.Format(exitCode)}\n");
                 }
                 catch (Exception error)
                 {

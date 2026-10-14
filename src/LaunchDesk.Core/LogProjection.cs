@@ -1,11 +1,12 @@
 namespace LaunchDesk.Core;
 
+public readonly record struct ProjectedLogLine(string Text, int PrefixLength, string Channel);
+
 // Formatting is cached by immutable record identity; disk capture is never affected
 // by display retention, filtering, pause, or collection notifications.
 public sealed class LogProjection
 {
-    private readonly record struct DisplayLine(string Text, int PrefixLength);
-    private sealed record Cached(string Name, bool Merged, DisplayLine[] Lines);
+    private sealed record Cached(string Name, bool Merged, ProjectedLogLine[] Lines);
     private readonly Dictionary<LogRecord, Cached> cache = new(ReferenceEqualityComparer.Instance);
     private sealed class Source
     {
@@ -18,6 +19,9 @@ public sealed class LogProjection
     public int CachedRecords => cache.Count;
 
     public string[] Update((Guid Id, string Name, LogStore Store)[] sources, bool merged, string? channel, string search)
+        => UpdateLines(sources, merged, channel, search).Select(x => x.Text).ToArray();
+
+    public ProjectedLogLine[] UpdateLines((Guid Id, string Name, LogStore Store)[] sources, bool merged, string? channel, string search)
     {
         FormattedRecords = 0; ReadRecords = 0;
         foreach (var removed in buffers.Keys.Where(x => !sources.Any(s => s.Store == x)).ToArray()) buffers.Remove(removed);
@@ -34,7 +38,7 @@ public sealed class LogProjection
         var snapshot = LogStore.MergeSnapshots(sources.Select(x => (x.Id, x.Name, buffers[x.Store].Records.Select(r => r.Record).ToArray())).ToArray());
         var retained = snapshot.Select(x => x.Record).ToHashSet(ReferenceEqualityComparer.Instance);
         foreach (var record in cache.Keys.Where(x => !retained.Contains(x)).ToArray()) cache.Remove(record);
-        var output = new List<DisplayLine>();
+        var output = new List<ProjectedLogLine>();
         foreach (var entry in snapshot)
         {
             var record = entry.Record;
@@ -46,7 +50,7 @@ public sealed class LogProjection
                 var lines = record.Text.Length == 0 ? [] : content.Split('\n').Select((line, index) =>
                 {
                     var label = merged || index == 0 ? prefix : "";
-                    return new DisplayLine(label + line.TrimEnd('\r'), label.Length);
+                    return new ProjectedLogLine(label + line.TrimEnd('\r'), label.Length, record.Channel);
                 }).ToArray();
                 cache[record] = formatted = new(entry.Name, merged, lines); FormattedRecords++;
             }
@@ -68,11 +72,11 @@ public sealed class LogProjection
                 var cut = first.Text.Length - (budget - first.PrefixLength - marker.Length - 1);
                 // Only trim content; never split the source prefix or a UTF-16 surrogate pair.
                 if (cut < first.Text.Length && char.IsLowSurrogate(first.Text[cut]) && char.IsHighSurrogate(first.Text[cut - 1])) cut++;
-                output[0] = new(first.Text[..first.PrefixLength] + marker + first.Text[cut..], first.PrefixLength);
+                output[0] = new(first.Text[..first.PrefixLength] + marker + first.Text[cut..], first.PrefixLength, first.Channel);
             }
         }
-        if (!string.IsNullOrWhiteSpace(search)) return output.Where(x => x.Text.Contains(search, StringComparison.OrdinalIgnoreCase)).Select(x => x.Text).ToArray();
-        if (output.Count > 0) output.Add(new("", 0));
-        return output.Select(x => x.Text).ToArray();
+        if (!string.IsNullOrWhiteSpace(search)) return output.Where(x => x.Text.Contains(search, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (output.Count > 0) output.Add(new("", 0, ""));
+        return output.ToArray();
     }
 }

@@ -47,6 +47,17 @@ internal static class UiText
         Labels.Refresh();
     }
     private const string Catalog = """
+{0}：请输入 {1} 至 {2} 的整数。|{0}: enter a whole number from {1} to {2}.
+清理警告|Cleanup warnings
+更多操作|More actions
+存在未保存的修改，确定放弃并关闭？|Discard unsaved changes and close?
+未保存修改|Unsaved changes
+日志 / 环境|Logs / env
+就绪检测|Readiness
+分组 · {0} 项|Group · {0}
+启动延迟（秒）|Startup delay (seconds)
+停止超时（秒）|Stop timeout (seconds)
+拖动调整列表与日志高度|Drag to resize the list and logs
 启动项|Launch items
 每次启动请求管理员授权|Request administrator consent on every launch
 Windows 服务管理|Windows service management

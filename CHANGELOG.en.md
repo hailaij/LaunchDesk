@@ -2,6 +2,19 @@
 
 [简体中文](CHANGELOG.md) | [English](CHANGELOG.en.md)
 
+### Unreleased
+
+### [0.10.0] - 2026-10-14
+
+- Simplify the toolbar with a More actions menu; emphasize folder groups, member counts and selected/focused row actions. Fix margins clipping the last row action.
+- Organize launch-item configuration into five tabs. Numeric errors select the relevant category; closing edited forms asks before discarding changes.
+- Expose cleanup warnings, preserve manually resized columns within a session and update automatic widths on same-band language changes. Numeric validation names the field and range; forced exit codes use consistent hexadecimal formatting.
+- Group window options, reveal the draggable splitter and keep preflight actions in a fixed footer. Cover compact Chinese and English forms.
+- Color log provenance prefixes without inferring severity. Preserve string projection compatibility, virtualization, selection and links; use system colors in high contrast. See [UI acceptance notes](docs/ui-usability.md).
+- Align rotation and filenames to UTC while retaining local record offsets; derive ring capacity from retention limits.
+- Cover timezone and reference-identity contracts, split display boundary cases and clarify performance units. Stream the complete source-hash inventory without reducing evidence.
+- Add owned fixture retention and a read-only temporary-directory inventory. See the [maintenance record](docs/log-policy-maintenance.md).
+
 ### [0.9.1] - 2026-10-14
 
 #### Fixed And Improved

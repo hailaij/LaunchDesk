@@ -9,10 +9,10 @@ if (@($report.metrics).Count -ne $expected.Count) { throw 'Incomplete benchmark 
 foreach ($name in $expected) {
     $metric = @($report.metrics | Where-Object name -eq $name)
     if ($metric.Count -ne 1 -or $metric[0].count -ne 10000 -or $null -eq $metric[0].elapsedMs -or $null -eq $metric[0].allocatedBytes -or $metric[0].elapsedMs -le 0 -or $metric[0].allocatedBytes -lt 0) { throw "Invalid benchmark: $name" }
-    $limit = switch ($name) { 'decode-utf-8' { 10000 }; 'decode-auto' { 10000 }; 'read-tail-1' { 128 }; 'read-idle' { 64 }; default { [double]::PositiveInfinity } }
-    if ($metric[0].allocatedBytes / 10000 -gt $limit) { throw "Allocation regression: $name" }
-    # Broad timing budgets tolerate shared CI hardware; allocation limits catch structural regressions.
-    $timeLimit = if ($name -eq 'persist-record') { 30000 } else { 5000 }
-    if ($metric[0].elapsedMs -gt $timeLimit) { throw "Latency regression: $name" }
+    $allocationLimitBytesPerOperation = switch ($name) { 'decode-utf-8' { 10000 }; 'decode-auto' { 10000 }; 'read-tail-1' { 128 }; 'read-idle' { 64 }; default { [double]::PositiveInfinity } }
+    if ($metric[0].allocatedBytes / $metric[0].count -gt $allocationLimitBytesPerOperation) { throw "Allocation regression (bytes/operation): $name" }
+    # Total milliseconds for all 10000 operations; keep the original shared-runner budgets.
+    $elapsedLimitMsTotal = if ($name -eq 'persist-record') { 30000 } else { 5000 }
+    if ($metric[0].elapsedMs -gt $elapsedLimitMsTotal) { throw "Latency regression (ms total): $name" }
 }
 Write-Output 'Log backend performance and persisted-record integrity gates passed'

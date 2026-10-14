@@ -8,8 +8,7 @@ internal static class LogBenchmarks
     public static async Task Run(string report)
     {
         var started = DateTimeOffset.UtcNow;
-        var root = Path.Combine(Path.GetTempPath(), "LaunchDesk-log-benchmark-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
+        var workspace = new TestWorkspace("log-benchmark"); var root = workspace.Root;
         var metrics = new List<object>();
         void Measure(string name, int count, Action action)
         {
@@ -46,5 +45,6 @@ internal static class LogBenchmarks
         await File.WriteAllTextAsync(path, JsonSerializer.Serialize(new { root, started, metrics,
             integrity = "10001 records exported without loss", scope = "Single-thread warmed microbenchmarks; no fsync/power-loss guarantee" }, new JsonSerializerOptions { WriteIndented = true }));
         await TestEvidence.WriteAsync(path, started, "log-benchmark");
+        Console.WriteLine("Benchmark data: " + workspace.Finish(path, true));
     }
 }

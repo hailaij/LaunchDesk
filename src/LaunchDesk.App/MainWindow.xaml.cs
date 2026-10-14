@@ -19,7 +19,8 @@ public sealed class ItemRow(LaunchItem item, bool isFolder = false, bool collaps
     public bool IsCollapsed => collapsed;
     public bool IsFolder { get; } = isFolder;
     public string Glyph => IsFolder ? "\uE8B7" : "\uE756";
-    public Thickness NameIndent => new(!IsFolder && Item.FolderId.HasValue ? 16 : 0, 0, 0, 0);
+    public Thickness NameIndent => new(!IsFolder && Item.FolderId.HasValue ? 24 : 0, 0, 0, 0);
+    public int MemberCount { get; private set; }
     public bool CanRun { get; private set; } = true;
     public bool CanStop { get; private set; }
     public bool CanModify { get; private set; } = true;
@@ -45,7 +46,7 @@ public sealed class ItemRow(LaunchItem item, bool isFolder = false, bool collaps
         if (value) RenameText = Name;
         IsRenaming = value; PropertyChanged?.Invoke(this, new(null));
     }
-    public string Kind => IsFolder ? T("文件夹") : Item.Kind switch { LaunchKind.Batch => "BAT / CMD", LaunchKind.Command => T("命令"), LaunchKind.Executable => T("程序"), LaunchKind.PowerShell => "PowerShell", _ => "Shell" };
+    public string Kind => IsFolder ? F("分组 · {0} 项", MemberCount) : Item.Kind switch { LaunchKind.Batch => "BAT / CMD", LaunchKind.Command => T("命令"), LaunchKind.Executable => T("程序"), LaunchKind.PowerShell => "PowerShell", _ => "Shell" };
     public string Target => Item.Target + " " + Item.Arguments;
     public string AutoStart => Item.AutoStart ? T("是") : "";
     public string Status { get; private set; } = T("未启动");
@@ -72,12 +73,13 @@ public sealed class ItemRow(LaunchItem item, bool isFolder = false, bool collaps
         StatusBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(state.Status switch
         { RunStatus.Running => Theme.IsDark ? "#76D9AD" : "#13795B", RunStatus.Failed => Theme.IsDark ? "#FF9292" : "#BD3434",
             RunStatus.Starting or RunStatus.Restarting or RunStatus.Stopping => Theme.IsDark ? "#EEC77C" : "#946400", _ => Theme.IsDark ? "#ADB4BE" : "#636B76" }));
-        Pid = state.Pid?.ToString() ?? ""; ExitCode = state.ExitCode == NativeProcess.ForcedExitCode ? "0xE04C4401" : state.ExitCode?.ToString() ?? "";
-        Duration = state.Active && state.Started is { } time ? (DateTimeOffset.Now - time).ToString(@"hh\:mm\:ss") : "";
+        Pid = state.Pid?.ToString() ?? "-"; ExitCode = state.ExitCode is { } code ? ExitCodeDisplay.Format(code) : "-";
+        Duration = state.Active && state.Started is { } time ? (DateTimeOffset.Now - time).ToString(@"hh\:mm\:ss") : "-";
         PropertyChanged?.Invoke(this, new(null));
     }
     public void RefreshFolder(RuntimeSnapshot[] states, bool starting)
     {
+        MemberCount = states.Length;
         var active = states.Count(x => x.Active);
         Status = starting ? T("启动中") : F("{0}/{1} 运行", active, states.Length);
         CanRun = !starting && states.Length > 0 && active < states.Length;
@@ -89,6 +91,27 @@ public sealed class ItemRow(LaunchItem item, bool isFolder = false, bool collaps
 
 public partial class MainWindow : Window
 {
+    private void MoreActionsClick(object sender, RoutedEventArgs e)
+    {
+        var button = (Button)sender;
+        var selected = Selected;
+        bool CanMove(int direction)
+        {
+            if (selected is null) return false;
+            var ids = selected.IsFolder ? config.Folders.Select(x => x.Id).ToArray()
+                : config.Items.Where(x => x.FolderId == selected.Item.FolderId).Select(x => x.Id).ToArray();
+            var index = Array.IndexOf(ids, selected.Item.Id) + direction;
+            return index >= 0 && index < ids.Length;
+        }
+        foreach (var entry in button.ContextMenu.Items.OfType<MenuItem>())
+            entry.IsEnabled = (entry.Tag as string) switch
+            {
+                "Edit" or "Delete" => selected?.CanModify == true,
+                "Duplicate" => selected is { IsFolder: false },
+                "MoveUp" => CanMove(-1), "MoveDown" => CanMove(1), _ => true
+            };
+        button.ContextMenu.PlacementTarget = button; button.ContextMenu.IsOpen = true;
+    }
     private ConfigurationStore store;
     private Configuration config;
     private ProcessManager manager;
@@ -157,16 +180,27 @@ public partial class MainWindow : Window
         Loaded += OnLoaded;
         SizeChanged += (_, _) => UpdateCompactLayout();
     }
+    private readonly Dictionary<int, DataGridLength> automaticWidths = new();
+    private int? compactBand;
+    private string? compactLanguage;
     private void UpdateCompactLayout()
     {
+        var band = ActualWidth < 1100 ? 0 : ActualWidth < 1250 ? 1 : 2;
+        if (compactBand == band && compactLanguage == UiText.Language) return;
+        compactBand = band; compactLanguage = UiText.Language;
         var visibility = ActualWidth < 1250 ? Visibility.Collapsed : Visibility.Visible;
         PidColumn.Visibility = visibility; ExitCodeColumn.Visibility = visibility;
         DurationColumn.Visibility = ActualWidth < 1100 ? Visibility.Collapsed : Visibility.Visible;
-        ItemsGrid.Columns[0].Width = ActualWidth < 1100 ? 140 : 160;
-        ItemsGrid.Columns[1].Width = ActualWidth < 1100 ? 90 : 100;
-        ItemsGrid.Columns[2].Width = UiText.Language == "en-US" ? (ActualWidth < 1100 ? 120 : 140) : 110;
-        ItemsGrid.Columns[5].Width = 70;
-        ItemsGrid.Columns[9].Width = ActualWidth < 1100 ? 110 : 130;
+        void Adapt(int index, double width)
+        {
+            var column = ItemsGrid.Columns[index];
+            if (automaticWidths.TryGetValue(index, out var previous)
+                && (column.Width.UnitType != previous.UnitType || column.Width.Value != previous.Value)) return;
+            column.Width = width; automaticWidths[index] = column.Width;
+        }
+        Adapt(0, band == 0 ? 140 : 160); Adapt(1, band == 0 ? 90 : 100);
+        Adapt(2, UiText.Language == "en-US" ? (band == 0 ? 120 : 140) : 110);
+        Adapt(5, 70); Adapt(9, band == 0 ? 110 : 130);
     }
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
@@ -320,6 +354,7 @@ public partial class MainWindow : Window
             if (row.IsFolder) row.RefreshFolder(groups.GetValueOrDefault(row.Item.Id) ?? [], folderStarts.ContainsKey(row.Item.Id));
             else row.Refresh(states[row.Item.Id], row.Item.FolderId is { } folderId && folderStarts.ContainsKey(folderId));
         SummaryText.Text = F("{0} 项 · {1} 运行中", config.Items.Count, states.Values.Count(x => x.Status == RunStatus.Running));
+        WarningsButton.Visibility = CleanupWarnings().Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         if (Selected is not { } selected) { SelectedTitle.Text = T("日志"); LogBox.Clear(); StartButton.IsEnabled = StopButton.IsEnabled = RestartButton.IsEnabled = false; return; }
         var members = selected.IsFolder ? config.Items.Where(x => x.FolderId == selected.Item.Id).ToArray() : [selected.Item];
         if (selected.IsFolder)
@@ -345,10 +380,10 @@ public partial class MainWindow : Window
         LogBox.Opacity = PauseLog.IsChecked == true ? 0.65 : 1;
         if (PauseLog.IsChecked == true || lastRevision == revision) return;
         var channel = (ChannelFilter.SelectedItem as ComboBoxItem)?.Content?.ToString();
-        var incoming = logProjection.Update(members.Select(x => (x.Id, x.Name, manager.Logs(x.Id))).ToArray(),
+        var incoming = logProjection.UpdateLines(members.Select(x => (x.Id, x.Name, manager.Logs(x.Id))).ToArray(),
             selected.IsFolder, ChannelFilter.SelectedIndex == 0 ? null : channel, LogSearch.Text);
         var horizontalOffset = LogBox.HorizontalOffset;
-        LogBox.SetLines(incoming);
+        LogBox.SetProjectedLines(incoming);
         lastRevision = revision;
         if (AutoScroll.IsChecked == true)
         {
@@ -382,6 +417,17 @@ public partial class MainWindow : Window
         StatusText.Text = ErrorText(error.Message);
         MessageBox.Show(this, error is AggregateException aggregate ? string.Join("\n", aggregate.InnerExceptions.Select(x => ErrorText(x.Message))) : ErrorText(error.Message),
             T("操作未完成"), MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+    private string[] CleanupWarnings() => manager.MaintenanceWarnings
+        .Concat(config.Items.SelectMany(item => manager.Logs(item.Id).CleanupWarnings.Select(warning => item.Name + ": " + warning)))
+        .Distinct().ToArray();
+    private void WarningsClick(object sender, RoutedEventArgs e)
+    {
+        var window = new Window { Owner = this, Title = T("清理警告"), Width = 620, Height = 380, MinWidth = 420, MinHeight = 240, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        window.SetResourceReference(IconProperty, "AppIcon");
+        window.Content = new TextBox { Text = string.Join(Environment.NewLine + Environment.NewLine, CleanupWarnings().Select(ErrorText)),
+            IsReadOnly = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(20) };
+        window.ShowDialog();
     }
     private bool CanEdit(LaunchItem item)
     {

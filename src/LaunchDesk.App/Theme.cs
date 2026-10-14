@@ -20,13 +20,16 @@ internal static class Theme
             ["Canvas"] = dark ? "#202124" : "#F4F5F7",
             ["Surface"] = dark ? "#292B2F" : "#FFFFFF",
             ["SurfaceHover"] = dark ? "#35383D" : "#EBEEF1",
+            ["FolderSurface"] = dark ? "#2D3532" : "#F0F5F3",
             ["Stroke"] = dark ? "#404349" : "#DCE1E6",
             ["Text"] = dark ? "#F1F3F5" : "#24272C",
             ["Muted"] = dark ? "#ADB4BE" : "#636B76",
             ["Selection"] = dark ? "#24483D" : "#E2F2EB",
             ["Accent"] = dark ? "#218563" : "#13795B",
             ["Terminal"] = dark ? "#17191C" : "#202225",
-            ["TerminalText"] = "#E3E8ED"
+            ["TerminalText"] = "#E3E8ED",
+            ["LogError"] = "#FF9C9C", ["LogSystem"] = "#E6C778", ["LogInput"] = "#99DDB4",
+            ["LogLink"] = "#71C7FF", ["LogSelection"] = "#264F70", ["LogSelectedText"] = "#FFFFFF"
         };
         foreach (var (name, color) in colors)
         {
@@ -34,12 +37,16 @@ internal static class Theme
             brush.Freeze(); System.Windows.Application.Current.Resources[name] = brush;
         }
         if (System.Windows.SystemParameters.HighContrast)
-        {
-            var resources = System.Windows.Application.Current.Resources;
-            foreach (var key in new[] { "Canvas", "Surface", "SurfaceHover", "Terminal" }) resources[key] = System.Windows.SystemColors.WindowBrush;
-            foreach (var key in new[] { "Text", "Muted", "Stroke", "TerminalText" }) resources[key] = System.Windows.SystemColors.WindowTextBrush;
-            resources["Accent"] = System.Windows.SystemColors.HighlightBrush;
-            resources["Selection"] = System.Windows.SystemColors.ControlBrush;
-        }
+            ApplyHighContrast(System.Windows.Application.Current.Resources);
+    }
+    internal static void ApplyHighContrast(System.Windows.ResourceDictionary resources)
+    {
+        foreach (var key in new[] { "Canvas", "Surface", "SurfaceHover", "Terminal", "FolderSurface" }) resources[key] = System.Windows.SystemColors.WindowBrush;
+        foreach (var key in new[] { "Text", "Muted", "Stroke", "TerminalText", "LogError", "LogSystem", "LogInput" }) resources[key] = System.Windows.SystemColors.WindowTextBrush;
+        resources["LogLink"] = System.Windows.SystemColors.HotTrackBrush;
+        resources["LogSelection"] = System.Windows.SystemColors.HighlightBrush;
+        resources["LogSelectedText"] = System.Windows.SystemColors.HighlightTextBrush;
+        resources["Accent"] = System.Windows.SystemColors.HighlightBrush;
+        resources["Selection"] = System.Windows.SystemColors.ControlBrush;
     }
 }

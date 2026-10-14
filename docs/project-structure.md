@@ -22,17 +22,26 @@ LaunchDesk/
   Directory.Build.props   Shared version and build properties
   global.json             SDK version
   NuGet.Config            Package sources
+  README.md               Chinese product overview and quick start
+  README.en.md            English product overview and quick start
+  CHANGELOG.md            Complete Chinese version history
+  CHANGELOG.en.md         Complete English version history
 ```
 
 ## Current Release Build
 
 Build an installer with `scripts/build-installer.ps1`. The default installer is:
 
-`artifacts/installers/LaunchDesk-v0.8.0-win-x64-setup.exe`
+`artifacts/installers/LaunchDesk-v0.9.0-win-x64-setup.exe`
 
 Keep the complete application directory when moving or copying a ZIP build. Exit an existing tray instance before installing another build; exiting stops its managed processes. Historical local previews may remain under `artifacts/previews/` and are not release downloads.
 
 ## Output Conventions
+
+Detailed usage, lifecycle boundaries and build/test commands are in
+[advanced-guide.md](advanced-guide.md) and [advanced-guide.en.md](advanced-guide.en.md).
+Keep complete version records in the root CHANGELOG files; README links to them
+instead of duplicating historical feature lists.
 
 - Keep source, scripts, documentation and tests in their existing locations so project references and CI remain unchanged.
 - Default build and test commands in the README continue to use their existing output paths.

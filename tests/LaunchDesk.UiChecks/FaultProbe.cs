@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows;
 using LaunchDesk;
 using LaunchDesk.Core;
+using LaunchDesk.UiTesting;
 
 internal static class FaultProbe
 {
@@ -13,14 +14,14 @@ internal static class FaultProbe
         var config = new Configuration { Preferences = new() { CheckUpdatesOnStartup = false } };
         if (mode.Contains("-en", StringComparison.Ordinal)) config.Preferences.Language = "en-US";
         var app = new App(); app.InitializeComponent();
-        var window = new MainWindow(new(root), config, false, report, false, "LaunchDesk-fixture-" + Guid.NewGuid().ToString("N"));
+        var runner = new UiSmokeRunner(new(root), config, false, report, false, "LaunchDesk-fixture-" + Guid.NewGuid().ToString("N"));
+        var window = runner.Window;
         app.ConfigureErrors(new(root), window);
         if (mode.EndsWith("-min", StringComparison.Ordinal)) { window.Width = 940; window.Height = 640; }
         if (mode.StartsWith("--ui-fault-", StringComparison.Ordinal))
         {
             // Replace only the loaded test callback; cleanup and dispatcher error handling remain production code.
-            var loaded = typeof(MainWindow).GetMethod("OnLoaded", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!;
-            window.Loaded -= (RoutedEventHandler)Delegate.CreateDelegate(typeof(RoutedEventHandler), window, loaded);
+            window.Loaded -= runner.SmokeLoadedHandler;
             window.Loaded += async (_, _) =>
             {
                 try

@@ -47,7 +47,15 @@ if (args.Length > 0 && args[0] != "--report")
     { await ScaleChecks.Run(innerReport, int.Parse(innerSeconds), int.Parse(innerMiB), Worker); return 0; }
     if (args[0] == "--elevated")
     {
-        await ElevationBroker.RunHelperAsync(args[1], args[2], int.Parse(args[3]), long.Parse(args[4]), _ => Task.CompletedTask, requireAdministrator: false);
+        var calls = 0;
+        async Task ProbeSignal(int pid)
+        {
+            if (args.Length <= 5) return;
+            var call = ++calls;
+            if (args[5] == "late" && call == 1) { await Task.Delay(2300); throw new IOException("late first signal"); }
+            await Task.Delay(250);
+        }
+        await ElevationBroker.RunHelperAsync(args[1], args[2], int.Parse(args[3]), long.Parse(args[4]), ProbeSignal, requireAdministrator: false);
         return 0;
     }
     if (args[0] == "--broker-owner")
@@ -390,6 +398,37 @@ await Test("Update checking requires no installer or signing configuration", asy
     using var client = new HttpClient(new UpdateResponseHandler { Json = json });
     var release = await UpdateChecker.CheckAsync(client: client);
     Assert(release is not null && release.Notes == "manual update" && release.IsNewerThan(new Version(0, 9, 0)), "metadata-only check");
+});
+await Test("Review: raw log payload memory budget preserves disk and reload", () =>
+{
+    var directory = Path.Combine(root, "raw-budget"); var id = Guid.NewGuid();
+    using (var log = new LogStore(directory, id, new()))
+    {
+        for (var i = 0; i < 3000; i++) { var bytes = new byte[8192]; BitConverter.GetBytes(i).CopyTo(bytes, 0); log.Write("stdout", "raw-" + i, bytes); }
+        var snapshot = log.Snapshot();
+        var size = snapshot.Sum(x => 2L * x.Text.Length + (x.RawBytes?.Length ?? 0));
+        Assert(size <= 4 * 1024 * 1024, "raw payload cache exceeds 4 MiB: " + size);
+        Assert(snapshot[^1].Text == "raw-2999", "newest record retained");
+        var delta = log.ReadSince(1);
+        Assert(delta.Reset && delta.Records.SequenceEqual(snapshot), "payload eviction resets stale incremental cursor");
+        var merged = LogStore.MergeSnapshots([(id, "first", snapshot), (Guid.NewGuid(), "second", snapshot)]);
+        Assert(merged.Sum(x => 2L * x.Record.Text.Length + (x.Record.RawBytes?.Length ?? 0)) <= LogStore.MaximumMemoryPayloadBytes
+            && merged[^1].Record.Text == "raw-2999", "merged payload budget and newest tail");
+        var export = Path.Combine(root, "raw-budget-export.jsonl"); log.Export(export, out var skipped);
+        var index = 0;
+        foreach (var line in File.ReadLines(export)) { var record = JsonSerializer.Deserialize<LogRecord>(line)!; Assert(record.RawBytes!.Length == 8192 && BitConverter.ToInt32(record.RawBytes) == index++, "raw export intact"); }
+        Assert(index == 3000 && skipped == 0, "disk records lost");
+    }
+    using var restored = new LogStore(directory, id, new()); restored.LoadRecent();
+    Assert(restored.Snapshot().Sum(x => 2L * x.Text.Length + (x.RawBytes?.Length ?? 0)) <= 4 * 1024 * 1024
+        && restored.Snapshot()[^1].Text == "raw-2999", "reload budget and newest tail");
+    restored.ClearPanel(); restored.Write("stdout", "after clear", new byte[8192]); Assert(restored.Snapshot().Length == 1, "budget reset on clear");
+    restored.Write("stdout", "oversized raw", new byte[4 * 1024 * 1024 + 1]);
+    var oversizedExport = Path.Combine(root, "raw-budget-oversized.jsonl"); restored.Export(oversizedExport, out var oversizedSkipped);
+    Assert(restored.Snapshot().Length == 0 && oversizedSkipped == 0
+        && JsonSerializer.Deserialize<LogRecord>(File.ReadLines(oversizedExport).Last())!.RawBytes!.Length == 4 * 1024 * 1024 + 1,
+        "oversized record stays on disk, not in cache");
+    return Task.CompletedTask;
 });
 await SigningChecks.Run(root, Test);
 await Test("Rename and stable startup priority preserve dependencies", async () =>

@@ -3,6 +3,7 @@
   <PropertyGroup><ApplicationIcon>Assets/LaunchDesk.ico</ApplicationIcon><Product>LaunchDesk</Product><Title>LaunchDesk</Title><Description>LaunchDesk Windows launcher</Description></PropertyGroup>
   <PropertyGroup><RuntimeIdentifiers>win-x64</RuntimeIdentifiers></PropertyGroup>
   <ItemGroup><Resource Include="Assets/LaunchDesk.ico" /></ItemGroup>
+  <ItemGroup><AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo"><_Parameter1>LaunchDesk.UiChecks</_Parameter1></AssemblyAttribute></ItemGroup>
   <ItemGroup><ProjectReference Include="../LaunchDesk.Core/LaunchDesk.Core.csproj" /></ItemGroup>
   <ItemGroup><ProjectReference Include="../LaunchDesk.Host/LaunchDesk.Host.csproj" ReferenceOutputAssembly="false" /></ItemGroup>
   <Target Name="CopyManagedHost" AfterTargets="Build">

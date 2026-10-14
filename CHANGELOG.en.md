@@ -2,6 +2,17 @@
 
 [简体中文](CHANGELOG.md) | [English](CHANGELOG.en.md)
 
+### [0.9.1] - 2026-10-14
+
+#### Fixed And Improved
+- Bound text and raw-byte cache payloads to 4 MiB per item across writes, history loading and merged snapshots; persisted and exported raw logs remain complete.
+- Correlate concurrent elevated-helper signal replies by request ID, isolating late timed-out replies; remove the redundant readiness wait loop.
+- After inspecting the released DLL metadata, move UI smoke implementation into the test host and add production-assembly and negative-fixture gates.
+- Expand the core inventory to 110 groups with raw-cache integrity and concurrent-signal regressions.
+
+#### Limitations
+- Stable, unsigned, manual installation only. Trusted signing remains blocked without production authorization. Physical Win10, real UAC/SCM, screen readers and one-hour endurance acceptance remain deferred; the historical intermittent interpreter timeout is still unexplained.
+
 ### [0.9.0] - 2026-10-13
 
 #### Changed

@@ -69,7 +69,7 @@ public static class Program
                 UiText.Apply(config.Preferences.Language);
                 MessageBox.Show(UiText.F("已从备份恢复配置：{0}\n损坏原件已保留：{1}\n本次启动不会自动启动任何启动项，请检查恢复内容。", store.RecoveredFrom, store.CorruptArchive ?? ""), "LaunchDesk", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
-            var window = new MainWindow(store, config, portable, null, args.Contains("--autostart"));
+            var window = new MainWindow(store, config, portable, args.Contains("--autostart"));
             app.ConfigureErrors(new ErrorDiagnostics(root), window);
             var registration = ThreadPool.RegisterWaitForSingleObject(activate, (_, _) => app.Dispatcher.BeginInvoke(window.Restore), null, -1, false);
             try { return app.Run(window); } finally { registration.Unregister(null); }

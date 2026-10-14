@@ -16,11 +16,13 @@ function Reject([scriptblock]$Action) {
     if (-not $rejected) { throw 'Expected rejection did not happen' }
 }
 try {
-    Check 'Production assembly excludes fault probes and test-host fixture is rejected' {
+    Check 'Production assembly excludes fault probes and UI smoke members; test fixtures are rejected' {
         & $checker --production-boundary (Join-Path $project 'src/LaunchDesk.App/bin/Release/net10.0-windows/LaunchDesk.dll') ''
         if ($LASTEXITCODE -ne 0) { throw 'Production fault probe check failed' }
         & $checker --production-boundary (Join-Path $project 'tests/LaunchDesk.UiChecks/bin/Release/net10.0-windows/LaunchDesk.UiChecks.dll') '' 2>$null
         if ($LASTEXITCODE -ne 1) { throw 'Fault probe fixture was accepted as production' }
+        & $checker --production-boundary (Join-Path $project 'tests/LaunchDesk.Tests/bin/Release/net10.0-windows/LaunchDesk.Tests.dll') '' 2>$null
+        if ($LASTEXITCODE -ne 1) { throw 'UI smoke method fixture was accepted as production' }
     }
     Check 'Packaging refuses stale payload without modifying it' {
         $directory = Join-Path $output ('stale-package-' + [guid]::NewGuid().ToString('N'))

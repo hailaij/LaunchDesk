@@ -40,9 +40,9 @@ dotnet run --project tests/LaunchDesk.Tests -c Release --no-build -- --bounded-t
 dotnet run --project tests/LaunchDesk.Tests -c Release --no-build -- --bounded-tool 90 tests/LaunchDesk.UiChecks/bin/Release/net10.0-windows/LaunchDesk.UiChecks.exe --scale-ui artifacts/verification/scale-and-gates/scale-ui.json
 ```
 
-CI runs a bounded 120-second / 200 MiB scale workload on each verification, alongside the 107-group core inventory and existing UI, log-performance and fatal-cleanup gates. Local ten-minute evidence is separate. A ten-minute run is only a short sustained observation; 1-hour/24-hour endurance and Windows 10 physical-machine acceptance remain separate work. No test signing trust is installed on developer machines.
+CI runs a bounded 120-second / 200 MiB scale workload on each verification, alongside the 110-group core inventory and existing UI, log-performance and fatal-cleanup gates. Local ten-minute evidence is separate. A ten-minute run is only a short sustained observation; 1-hour/24-hour endurance and Windows 10 physical-machine acceptance remain separate work. No test signing trust is installed on developer machines.
 
-CI 执行 120 秒 / 200 MiB 规模门禁，以及 107 组核心测试和现有界面、日志性能、异常清理门禁；本地 10 分钟证据单独记录。10 分钟只代表短期持续观测，1 小时/24 小时耐久及 Win10 实机验收仍属独立工作。不在开发电脑安装测试签名信任。
+CI 执行 120 秒 / 200 MiB 规模门禁，以及 110 组核心测试和现有界面、日志性能、异常清理门禁；本地 10 分钟证据单独记录。10 分钟只代表短期持续观测，1 小时/24 小时耐久及 Win10 实机验收仍属独立工作。不在开发电脑安装测试签名信任。
 
 ## Local Evidence / 本地证据
 

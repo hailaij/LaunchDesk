@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Windows.Threading;
 using LaunchDesk;
 using LaunchDesk.Core;
+using LaunchDesk.UiTesting;
 
 internal static class UiChecks
 {
@@ -82,7 +83,8 @@ internal static class UiChecks
         var loaded = args[0] == "--loaded";
         if (loaded) config.Items.Add(new() { Name = "fault", Target = "cmd" });
         var pipe = "LaunchDesk-ui-test-" + Guid.NewGuid().ToString("N");
-        var window = new MainWindow(store, config, false, loaded ? report + ".png" : null, false, pipe);
+        MainWindow window = loaded ? new UiSmokeRunner(store, config, false, report + ".png", false, pipe).Window
+            : new MainWindow(store, config, false, false, pipe);
         var escaped = false;
         app.DispatcherUnhandledException += (_, e) => { escaped = true; e.Handled = true; app.Shutdown(1); };
         if (args[0] == "--service-diagnostics")
@@ -204,7 +206,7 @@ internal static class UiChecks
                     editor.Show(); editor.UpdateLayout();
                     foreach (var input in Descendants(editor).OfType<System.Windows.Controls.TextBox>().Where(x => x.IsVisible && x.Name != "PART_EditableTextBox")) Named(input);
                     if (buttons.Any(x => x.FocusVisualStyle is null)) throw new InvalidDataException("Missing keyboard focus visual");
-                    typeof(MainWindow).GetMethod("Capture", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, [editor, report + ".png"]);
+                    UiSmokeRunner.Capture(editor, report + ".png");
                     passed = true;
                 }
                 catch (Exception error) { failure = error.ToString(); }
@@ -224,7 +226,7 @@ internal static class UiChecks
             {
                 if (!decision && app.Windows.OfType<RecoveryDialog>().FirstOrDefault() is { } dialog)
                 {
-                    typeof(MainWindow).GetMethod("Capture", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, [dialog, report + ".png"]);
+                    UiSmokeRunner.Capture(dialog, report + ".png");
                     dialog.DialogResult = acceptRecovery; decision = true; return;
                 }
                 if (running) return;

@@ -9,14 +9,37 @@ try
 {
     if (args.Length != 3) throw new ArgumentException("Usage: --embedded-pin <Core.dll> <pin-or-empty> | --verify-file <file> <pin> | --production-boundary <App.dll> <empty>");
     var path = Path.GetFullPath(args[1]); var pin = args[2];
-    if (args[0] == "--production-boundary")
+    if (args[0] == "--ui-smoke-inventory")
+    {
+        using var stream = File.OpenRead(path); using var pe = new PEReader(stream);
+        var metadata = pe.GetMetadataReader();
+        var members = metadata.TypeDefinitions.SelectMany(handle =>
+        {
+            var type = metadata.GetTypeDefinition(handle);
+            if (metadata.GetString(type.Name) != "MainWindow") return Array.Empty<string>();
+            return type.GetMethods().Select(x => metadata.GetString(metadata.GetMethodDefinition(x).Name))
+                .Concat(type.GetFields().Select(x => metadata.GetString(metadata.GetFieldDefinition(x).Name))).ToArray();
+        }).Where(x => x is "smokePath" or "Capture" or "VerifyVirtualLogAsync" or "VerifyIncrementalLogAsync" or "RunSmokeAsync").ToArray();
+        Console.WriteLine(JsonSerializer.Serialize(new { path, members, present = members.Length > 0 }));
+    }
+    else if (args[0] == "--production-boundary")
     {
         using var stream = File.OpenRead(path); using var pe = new PEReader(stream);
         var metadata = pe.GetMetadataReader();
         var names = metadata.TypeDefinitions.Select(x => metadata.GetString(metadata.GetTypeDefinition(x).Name))
             .Concat(metadata.FieldDefinitions.Select(x => metadata.GetString(metadata.GetFieldDefinition(x).Name)))
             .Concat(metadata.PropertyDefinitions.Select(x => metadata.GetString(metadata.GetPropertyDefinition(x).Name)));
-        if (names.Any(x => x.Contains("FaultProbe", StringComparison.Ordinal))) throw new InvalidDataException("Fault injection member found in production assembly.");
+        if (names.Any(x => x.Contains("FaultProbe", StringComparison.Ordinal) || x == "UiSmokeRunner"))
+            throw new InvalidDataException("Test-host member found in production assembly.");
+        foreach (var handle in metadata.TypeDefinitions)
+        {
+            var type = metadata.GetTypeDefinition(handle);
+            if (metadata.GetString(type.Name) != "MainWindow") continue;
+            var members = type.GetMethods().Select(x => metadata.GetString(metadata.GetMethodDefinition(x).Name))
+                .Concat(type.GetFields().Select(x => metadata.GetString(metadata.GetFieldDefinition(x).Name)));
+            if (members.Any(x => x is "smokePath" or "Capture" or "VerifyVirtualLogAsync" or "VerifyIncrementalLogAsync" or "RunSmokeAsync"))
+                throw new InvalidDataException("UI smoke member found in production assembly.");
+        }
         Console.WriteLine(JsonSerializer.Serialize(new { status = "passed", check = "production-boundary", path }));
     }
     else if (args[0] == "--embedded-pin")

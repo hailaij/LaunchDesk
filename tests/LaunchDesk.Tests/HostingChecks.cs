@@ -73,6 +73,31 @@ internal static class HostingChecks
                 Check(!Alive(pid) && process.ForcedTermination, "Elevated job leaked");
             }
         });
+        async Task<IManagedProcess> SignalProbe(string mode) => await ElevationBroker.StartAsync(worker("--worker sleep"), Environment.ProcessPath!, CancellationToken.None,
+            info => Process.Start(self(info.ArgumentList.Concat([mode]).ToArray())));
+        await test("Review: concurrent broker signals retain both replies", async () =>
+        {
+            using var process = await SignalProbe("concurrent");
+            try
+            {
+                var first = process.SignalAsync(_ => Task.CompletedTask); await Task.Delay(100);
+                var second = process.SignalAsync(_ => Task.CompletedTask);
+                await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(6));
+            }
+            finally { process.Kill(); await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10)); }
+        });
+        await test("Review: timed out broker signal cannot poison next reply", async () =>
+        {
+            using var process = await SignalProbe("late");
+            try
+            {
+                var timedOut = false;
+                try { await process.SignalAsync(_ => Task.CompletedTask); } catch (TimeoutException) { timedOut = true; }
+                Check(timedOut, "first probe did not time out");
+                await process.SignalAsync(_ => Task.CompletedTask).WaitAsync(TimeSpan.FromSeconds(6));
+            }
+            finally { process.Kill(); await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10)); }
+        });
         await test("Hosting: isolated helper and manager crashes clean child processes", async () =>
         {
             Process? helper = null;

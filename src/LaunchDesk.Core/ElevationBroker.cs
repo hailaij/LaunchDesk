@@ -5,11 +5,12 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Security.AccessControl;
+using System.Collections.Concurrent;
 
 namespace LaunchDesk.Core;
 
 public sealed record BrokerStart(string Nonce, LaunchItem Item);
-public sealed record BrokerMessage(string Kind, int Pid = 0, int ExitCode = 0, bool Forced = false, string Error = "");
+public sealed record BrokerMessage(string Kind, int Pid = 0, int ExitCode = 0, bool Forced = false, string Error = "", string RequestId = "");
 
 public sealed class ElevationBroker : IManagedProcess
 {
@@ -21,7 +22,7 @@ public sealed class ElevationBroker : IManagedProcess
     private readonly Process helper;
     private readonly SemaphoreSlim writes = new(1, 1);
     private readonly Task completion;
-    private TaskCompletionSource? signalReply;
+    private readonly ConcurrentDictionary<string, TaskCompletionSource> signalReplies = new();
     public Stream Output => output;
     public Stream Error => error;
     public Stream Input => input;
@@ -89,33 +90,39 @@ public sealed class ElevationBroker : IManagedProcess
                 var reply = await LocalControl.ReadAsync<BrokerMessage>(control, FrameLimit, CancellationToken.None);
                 if (reply.Kind == "signal")
                 {
-                    if (reply.Error.Length == 0) signalReply?.TrySetResult(); else signalReply?.TrySetException(new IOException(reply.Error));
+                    if (signalReplies.TryGetValue(reply.RequestId, out var pending))
+                    { if (reply.Error.Length == 0) pending.TrySetResult(); else pending.TrySetException(new IOException(reply.Error)); }
                 }
                 else if (reply.Kind == "exited")
-                { ExitCode = reply.ExitCode; ForcedTermination = reply.Forced; await helper.WaitForExitAsync(); return; }
+                { ExitCode = reply.ExitCode; ForcedTermination = reply.Forced; await helper.WaitForExitAsync(); FailSignals(new IOException("管理员助手进程已退出。")); return; }
                 else throw new IOException("管理员助手协议无效。");
             }
         }
-        catch (Exception ex) { signalReply?.TrySetException(ex); output.Dispose(); error.Dispose(); input.Dispose(); control.Dispose(); throw; }
+        catch (Exception ex) { FailSignals(ex); output.Dispose(); error.Dispose(); input.Dispose(); control.Dispose(); throw; }
     }
-    private async Task CommandAsync(string kind)
+    private void FailSignals(Exception error) { foreach (var pending in signalReplies.Values) pending.TrySetException(error); }
+    private async Task CommandAsync(string kind, string requestId = "")
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         await writes.WaitAsync(timeout.Token);
-        try { await LocalControl.WriteAsync(control, new BrokerMessage(kind), FrameLimit, timeout.Token); }
+        try { await LocalControl.WriteAsync(control, new BrokerMessage(kind, RequestId: requestId), FrameLimit, timeout.Token); }
         finally { writes.Release(); }
     }
     public Task WaitForExitAsync() => completion;
     public async Task SignalAsync(Func<int, Task> fallback)
     {
-        signalReply = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        await CommandAsync("signal"); await signalReply.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var id = Guid.NewGuid().ToString("N");
+        var reply = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        signalReplies[id] = reply;
+        try { await CommandAsync("signal", id); await reply.Task.WaitAsync(TimeSpan.FromSeconds(2)); }
+        finally { signalReplies.TryRemove(id, out _); }
     }
     public void Kill() { try { CommandAsync("kill").GetAwaiter().GetResult(); } catch { control.Dispose(); } }
     public void CloseInput() { try { input.Dispose(); } catch (IOException) { } }
     public void Dispose()
     {
         if (disposed) return; disposed = true;
+        FailSignals(new ObjectDisposedException(nameof(ElevationBroker)));
         control.Dispose(); input.Dispose(); output.Dispose(); error.Dispose(); helper.Dispose();
     }
     public static async Task RunHelperAsync(string name, string nonce, int ownerId, long ownerStarted, Func<int, Task> signal, bool requireAdministrator = true)
@@ -174,7 +181,7 @@ public sealed class ElevationBroker : IManagedProcess
                 else if (message.Kind == "signal")
                 {
                     string detail = ""; try { await signal(native.Id); } catch (Exception ex) { detail = ex.Message; }
-                    await LocalControl.WriteAsync(pipes[0], new BrokerMessage("signal", Error: detail), FrameLimit, lifetime.Token);
+                    await LocalControl.WriteAsync(pipes[0], new BrokerMessage("signal", Error: detail, RequestId: message.RequestId), FrameLimit, lifetime.Token);
                 }
                 else throw new InvalidDataException("管理员助手命令无效。");
             }

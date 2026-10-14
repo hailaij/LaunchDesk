@@ -26,22 +26,17 @@ internal sealed class ReadinessMonitor(ReadinessOptions options)
         var token = timeout.Token;
         try
         {
-            while (true)
+            token.ThrowIfCancellationRequested();
+            if (exit.IsCompleted) throw new InvalidOperationException("进程在服务就绪前退出。");
+            var probe = options.Kind == ReadinessKind.Log ? matched.Task.WaitAsync(token) : ProbeAsync(token);
+            if (await Task.WhenAny(exit, probe).ConfigureAwait(false) == exit)
             {
-                token.ThrowIfCancellationRequested();
-                if (exit.IsCompleted) throw new InvalidOperationException("进程在服务就绪前退出。");
-                var probe = options.Kind == ReadinessKind.Log ? matched.Task.WaitAsync(token) : ProbeAsync(token);
-                if (await Task.WhenAny(exit, probe).ConfigureAwait(false) == exit)
-                {
-                    timeout.Cancel();
-                    try { await probe.ConfigureAwait(false); } catch (OperationCanceledException) { }
-                    throw new InvalidOperationException("进程在服务就绪前退出。");
-                }
-                await probe.ConfigureAwait(false);
-                if (options.Kind == ReadinessKind.Log) return;
-                // Network probes complete only after a successful response.
-                return;
+                timeout.Cancel();
+                try { await probe.ConfigureAwait(false); } catch (OperationCanceledException) { }
+                throw new InvalidOperationException("进程在服务就绪前退出。");
             }
+            // Network retrying belongs to ProbeAsync, which completes only on success.
+            await probe.ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         { throw new TimeoutException($"服务就绪检测超时（{options.TimeoutSeconds} 秒）。"); }

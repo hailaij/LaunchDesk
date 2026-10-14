@@ -16,7 +16,7 @@ internal static class ScaleUiChecks
         for (var i = 0; i < 1000; i++) config.Items.Add(new() { Name = "规模中文🙂-" + i, Target = "not-executed" });
         var store = new ConfigurationStore(root); store.Save(config);
         var app = new App(); app.InitializeComponent();
-        var window = new MainWindow(store, store.Load(), false, null, false, "LaunchDesk-scale-ui-" + Guid.NewGuid().ToString("N"));
+        var window = new MainWindow(store, store.Load(), false, false, "LaunchDesk-scale-ui-" + Guid.NewGuid().ToString("N"));
         var clock = Stopwatch.StartNew();
         window.Loaded += async (_, _) =>
         {

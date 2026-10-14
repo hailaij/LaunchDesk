@@ -8,6 +8,8 @@ public sealed record LogRecord(DateTimeOffset Time, string Channel, string Text,
 public sealed record LogDelta(long Cursor, long FirstCursor, bool Reset, LogRecord[] Records);
 public sealed partial class LogStore : IDisposable
 {
+    public const long MaximumMemoryPayloadBytes = 4 * 1024 * 1024;
+    private static long PayloadBytes(LogRecord record) => 2L * record.Text.Length + (record.RawBytes?.LongLength ?? 0);
     private readonly object gate = new();
     private readonly object diskGate = new();
     private readonly Queue<string> cleanupWarnings = new();
@@ -21,6 +23,7 @@ public sealed partial class LogStore : IDisposable
     private DateTime currentDate;
     private long bytes;
     private int characters;
+    private long memoryPayloadBytes;
     private int revision;
     private static long sequence;
     private long changeStamp;
@@ -54,10 +57,10 @@ public sealed partial class LogStore : IDisposable
             writer.WriteLine(serialized); writer.Flush(); bytes += Encoding.UTF8.GetByteCount(serialized) + 2;
             lock (gate)
             {
-                memory.Enqueue(record); cursors.Enqueue(++cursor); characters += text.Length; revision++;
+                memory.Enqueue(record); cursors.Enqueue(++cursor); characters += text.Length; memoryPayloadBytes += PayloadBytes(record); revision++;
                 Interlocked.Exchange(ref changeStamp, Interlocked.Increment(ref sequence));
-                while (memory.Count > 3000 || characters > 500_000)
-                { characters -= memory.Dequeue().Text.Length; cursors.Dequeue(); }
+                while (memory.Count > 3000 || characters > 500_000 || memoryPayloadBytes > MaximumMemoryPayloadBytes)
+                { var removed = memory.Dequeue(); characters -= removed.Text.Length; memoryPayloadBytes -= PayloadBytes(removed); cursors.Dequeue(); }
             }
         }
     }
@@ -104,7 +107,7 @@ public sealed partial class LogStore : IDisposable
             return new(cursor, first, reset, memory.ToArray(skip));
         }
     }
-    public void ClearPanel() { lock (gate) { memory.Clear(); cursors.Clear(); resetCursor = ++cursor; characters = 0; recentLoaded = true; revision++; Interlocked.Exchange(ref changeStamp, Interlocked.Increment(ref sequence)); } }
+    public void ClearPanel() { lock (gate) { memory.Clear(); cursors.Clear(); resetCursor = ++cursor; characters = 0; memoryPayloadBytes = 0; recentLoaded = true; revision++; Interlocked.Exchange(ref changeStamp, Interlocked.Increment(ref sequence)); } }
     public void DeleteHistory()
     {
         lock (diskGate)
@@ -142,11 +145,12 @@ public sealed partial class LogStore : IDisposable
             if (memory.Count > 0 || !Directory.Exists(DirectoryPath)) { recentLoaded = true; return; }
             initialStamp = changeStamp;
         }
-        var loaded = new Queue<LogRecord>(); var count = 0;
+        var loaded = new Queue<LogRecord>(); var count = 0; long payload = 0;
         foreach (var record in ReadRecords(recentOnly: true))
         {
-            loaded.Enqueue(record); count += record.Text.Length;
-            while (loaded.Count > 3000 || count > 500_000) count -= loaded.Dequeue().Text.Length;
+            loaded.Enqueue(record); count += record.Text.Length; payload += PayloadBytes(record);
+            while (loaded.Count > 3000 || count > 500_000 || payload > MaximumMemoryPayloadBytes)
+            { var removed = loaded.Dequeue(); count -= removed.Text.Length; payload -= PayloadBytes(removed); }
         }
         lock (gate)
         {
@@ -156,6 +160,7 @@ public sealed partial class LogStore : IDisposable
             resetCursor = ++cursor;
             foreach (var record in loaded) { memory.Enqueue(record); cursors.Enqueue(++cursor); }
             characters = count;
+            memoryPayloadBytes = payload;
             revision++;
             Interlocked.Exchange(ref changeStamp, Interlocked.Increment(ref sequence));
         }
@@ -174,9 +179,10 @@ public sealed partial class LogStore : IDisposable
             }
         var records = new List<(Guid Id, string Name, LogRecord Record)>();
         while (queue.TryDequeue(out var record, out _)) records.Add(record);
-        var characters = 0; var start = records.Count;
-        while (start > 0 && characters + records[start - 1].Record.Text.Length <= 500_000)
-            characters += records[--start].Record.Text.Length;
+        var characters = 0; long payload = 0; var start = records.Count;
+        while (start > 0 && characters + records[start - 1].Record.Text.Length <= 500_000
+            && payload + PayloadBytes(records[start - 1].Record) <= MaximumMemoryPayloadBytes)
+        { payload += PayloadBytes(records[start - 1].Record); characters += records[--start].Record.Text.Length; }
         return records.Skip(start).ToArray();
     }
     private IEnumerable<LogRecord> RetainedRecords() => ReadRecords();

@@ -20,7 +20,7 @@ Start scripts, commands and programs together. Keep their status and logs in one
 
 ![LaunchDesk English interface](docs/images/main-en.png)
 
-> Current stable release: **v0.10.0**. Installers are **unsigned and require manual installation**; stable status is not publisher-signature certification. Screenshots use isolated fixture data, not preinstalled launch items or logs. [More screenshots](docs/screenshots.md)
+> Current stable release: **v0.10.1**. Installers are **unsigned and require manual installation**; stable status is not publisher-signature certification. Screenshots use isolated fixture data, not preinstalled launch items or logs. [More screenshots](docs/screenshots.md)
 
 ## Contents
 
@@ -76,7 +76,7 @@ Each item has its own arguments, working directory, environment, encoding, stop 
 ### Download and install
 
 1. Open the [latest stable release](https://github.com/hailaij/LaunchDesk/releases/latest).
-2. Download `LaunchDesk-v0.10.0-win-x64-setup.exe` or the portable `LaunchDesk-v0.10.0-win-x64.zip`.
+2. Download `LaunchDesk-v0.10.1-win-x64-setup.exe` or the portable `LaunchDesk-v0.10.1-win-x64.zip`.
 3. Windows 10/11 x64 self-contained packages include .NET. Fully extract the ZIP before running `LaunchDesk.exe`.
 4. Add a launch item, enter the command/resource, arguments and working directory, then start it.
 
@@ -108,7 +108,7 @@ See [advanced usage and development](docs/advanced-guide.en.md) for packaging, t
 | [Services, accessibility and installer](docs/service-accessibility-installer.md) | CLI, elevation, service hosting and acceptance boundaries |
 | [Project structure](docs/project-structure.md) | Source, tests, scripts and generated files |
 | [Update boundaries](docs/update-security.md) | Metadata checks, browser downloads and independent signing gates |
-| [Release verification](docs/release-v0.10.0.md) | Release provenance, verification scope and known limitations |
+| [Release verification](docs/release-v0.10.1.md) | Release provenance, verification scope and known limitations |
 | [Test isolation and scale](docs/scale-and-test-gates.md) | Deadlines, resource keys, 1,000-item and 200 MiB gates |
 | [Security](SECURITY.md) / [Privacy](PRIVACY.md) | Vulnerability reporting, network and local data handling |
 
@@ -151,7 +151,7 @@ It does not manage their internal lifecycles or provide remote administration. E
 
 **Is the stable release signed and fully accepted on physical machines?**
 
-No. Packages remain unsigned. Physical Windows 10, real services, UAC/SCM and screen-reader acceptance are pending. A prior development source passed a one-hour soak, but it was not repeated on this release source. Historical intermittent npm/PowerShell exit timeouts remain unexplained; subsequent passes do not prove a root-cause fix. See the [release verification record](https://github.com/hailaij/LaunchDesk/releases/tag/v0.10.0).
+No. Packages remain unsigned. Physical Windows 10, real services, UAC/SCM and screen-reader acceptance are pending. A prior development source passed a one-hour soak, but it was not repeated on this release source. Historical intermittent npm/PowerShell exit timeouts remain unexplained; subsequent passes do not prove a root-cause fix. See the [release verification record](https://github.com/hailaij/LaunchDesk/releases/tag/v0.10.1).
 
 ## Changelog
 

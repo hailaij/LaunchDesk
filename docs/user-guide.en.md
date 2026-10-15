@@ -24,6 +24,8 @@ Choose **Settings > Appearance > Language > English** or Simplified Chinese and 
 
 First use has no sample items. Existing user configuration and logs are retained during upgrades. Closing the window hides it to the tray; **Exit** stops managed processes and drains logs. Exit before upgrading or uninstalling.
 
+`stdout` / `stderr` identify the actual output pipes, not severity or service health. Some services, including Alist, write INFO and WARN messages to stderr. Both channels use neutral prefixes without inferring severity. Consult the original messages, process status and readiness/health checks; filtering and exports preserve the actual source.
+
 Each item has its own resource, arguments, working directory, environment variables and encoding. For npm, use the directory containing the intended `package.json` and its start script. Shell scripts require an explicit executable interpreter. Folders group items without moving disk files. Dissolving a folder retains its items and logs.
 
 Item notes appear to the right, immediately before the run button. Long notes are truncated with a full-text tooltip and are included in item search. Double-click a note (including an empty cell) to edit inline; Enter or focus loss saves, Esc cancels. Column sorting is disabled to keep folder members below their headers; use drag-and-drop or the up/down buttons to reorder.

@@ -20,7 +20,7 @@
 
 ![LaunchDesk 主界面](docs/images/main.png)
 
-> 当前正式版本：**v0.10.0**。安装包**未签名，需手动下载安装**；正式发布不等于发行者签名认证。截图由隔离测试数据生成，首次安装不会带示例启动项或日志。[更多界面截图](docs/screenshots.md)
+> 当前正式版本：**v0.10.1**。安装包**未签名，需手动下载安装**；正式发布不等于发行者签名认证。截图由隔离测试数据生成，首次安装不会带示例启动项或日志。[更多界面截图](docs/screenshots.md)
 
 ## 目录
 
@@ -76,7 +76,7 @@ LaunchDesk 面向需要反复启动多个本地程序或后台服务的 Windows 
 ### 下载安装
 
 1. 打开 [最新正式版](https://github.com/hailaij/LaunchDesk/releases/latest)。
-2. 下载 `LaunchDesk-v0.10.0-win-x64-setup.exe` 安装器，或 `LaunchDesk-v0.10.0-win-x64.zip` 免安装包。
+2. 下载 `LaunchDesk-v0.10.1-win-x64-setup.exe` 安装器，或 `LaunchDesk-v0.10.1-win-x64.zip` 免安装包。
 3. Windows 10/11 x64 自包含包自带 .NET；ZIP 须完整解压后运行 `LaunchDesk.exe`。
 4. 点击添加图标，填写资源/命令、参数和工作目录，再启动该项。
 
@@ -108,7 +108,7 @@ dotnet run --project src/LaunchDesk.App -c Release
 | [服务、无障碍与安装器](docs/service-accessibility-installer.md) | CLI、提权、服务托管及验收边界 |
 | [项目结构](docs/project-structure.md) | 源码、测试、脚本和产物目录 |
 | [更新边界](docs/update-security.md) | 版本检查、浏览器下载与独立签名发布门禁 |
-| [版本验证](docs/release-v0.10.0.md) | 发布来源、验证范围及已知限制 |
+| [版本验证](docs/release-v0.10.1.md) | 发布来源、验证范围及已知限制 |
 | [测试隔离与规模验证](docs/scale-and-test-gates.md) | 测试超时、资源键、1000 项及 200 MiB 门禁 |
 | [安全政策](SECURITY.md) / [隐私政策](PRIVACY.md) | 漏洞报告、联网与本地数据处理 |
 
@@ -151,7 +151,7 @@ dotnet run --project src/LaunchDesk.App -c Release
 
 **正式版是否已经签名并完成所有实机验收？**
 
-没有。安装包仍未签名；Win10 实机、真实服务、UAC/SCM 和读屏验收待完成。此前开发源码的一小时耐久已通过，但本版发布源码未重跑一小时验收。历史 npm/PowerShell 偶发退出超时的根因尚未确认，后续通过不等于根因修复。详见 [Release 验证说明](https://github.com/hailaij/LaunchDesk/releases/tag/v0.10.0)。
+没有。安装包仍未签名；Win10 实机、真实服务、UAC/SCM 和读屏验收待完成。此前开发源码的一小时耐久已通过，但本版发布源码未重跑一小时验收。历史 npm/PowerShell 偶发退出超时的根因尚未确认，后续通过不等于根因修复。详见 [Release 验证说明](https://github.com/hailaij/LaunchDesk/releases/tag/v0.10.1)。
 
 ## 更新日志
 

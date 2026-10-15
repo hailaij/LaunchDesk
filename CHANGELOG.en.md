@@ -4,6 +4,11 @@
 
 ### Unreleased
 
+### [0.10.1] - 2026-10-15
+
+- Use neutral stdout/stderr prefixes: stderr is a transport channel, not error severity. Normal Alist INFO messages no longer appear as errors. Actual channels, original warnings, filtering and exports are preserved.
+- Add light/dark theme and high-contrast log UI regressions; clarify channel semantics in both guides.
+
 ### [0.10.0] - 2026-10-14
 
 - Simplify the toolbar with a More actions menu; emphasize folder groups, member counts and selected/focused row actions. Fix margins clipping the last row action.

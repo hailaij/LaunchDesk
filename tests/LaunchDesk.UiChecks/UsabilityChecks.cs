@@ -137,7 +137,7 @@ internal static class UsabilityChecks
                 var prefix = ((Paragraph)rendered.Document.Blocks.FirstBlock).Inlines.OfType<Run>().First();
                 Check(ReferenceEquals(prefix.Foreground, Application.Current.Resources["TerminalText"]), "Stdout ERROR remains stdout");
                 rendered.Channel = "stderr";
-                Check(ReferenceEquals(prefix.Foreground, Application.Current.Resources["LogError"]), "Stderr prefix color");
+                Check(ReferenceEquals(prefix.Foreground, Application.Current.Resources["TerminalText"]), "Stderr is a transport channel, not error severity");
                 Theme.ApplyHighContrast(Application.Current.Resources);
                 Check(ReferenceEquals(prefix.Foreground, SystemColors.WindowTextBrush), "High contrast channel fallback");
                 var selectedContainer = (ListBoxItem)ItemsControl.ContainerFromElement(log, rendered);
@@ -146,6 +146,22 @@ internal static class UsabilityChecks
                 var link = ((Paragraph)rendered.Document.Blocks.FirstBlock).Inlines.OfType<Hyperlink>().Single();
                 Check(ReferenceEquals(link.Foreground, SystemColors.HighlightTextBrush) && link.ToolTip!.ToString()!.Contains("Ctrl"), "Selected link contrast and tooltip");
                 UiSmokeRunner.Capture(logWindow, report + ".high-contrast.png");
+                foreach (var theme in new[] { "Light", "Dark" })
+                {
+                    Theme.Apply(theme);
+                    var samples = new[] { "INFO[2026-10-15 21:07:47] start HTTP server @ 0.0.0.0:5244", "WARN[2026-10-15 21:07:47] init tool aria2 failed", "ERROR connection failed" };
+                    log.SetProjectedLines(samples.Select(x => new ProjectedLogLine("[stderr] " + x, 9, "stderr")).ToArray());
+                    log.UnselectAll(); logWindow.UpdateLayout();
+                    var stderrRows = LogView.VisualChildren<LogLineView>(log).Where(x => x.Channel == "stderr").ToArray();
+                    Check(stderrRows.Length == samples.Length, "Alist stderr rows rendered " + theme);
+                    foreach (var stderrRow in stderrRows)
+                    {
+                        var run = ((Paragraph)stderrRow.Document.Blocks.FirstBlock).Inlines.OfType<Run>().First();
+                        Check(ReferenceEquals(run.Foreground, Application.Current.Resources["TerminalText"]), "Stderr severity is not inferred " + theme);
+                        Check(stderrRow.Value.StartsWith("[stderr] ") && samples.Any(stderrRow.Value.EndsWith), "Original stderr content retained " + theme);
+                    }
+                    UiSmokeRunner.Capture(logWindow, report + ".stderr-" + theme + ".png");
+                }
             }
             finally { logWindow.Close(); Theme.Apply("Light"); }
             Check(ExitCodeDisplay.Format(NativeProcess.ForcedExitCode) == "0xE04C4401" && ExitCodeDisplay.Format(1) == "1", "Forced versus ordinary exit formatting");

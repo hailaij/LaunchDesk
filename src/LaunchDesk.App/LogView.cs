@@ -334,8 +334,9 @@ public sealed class LogLineView : RichTextBox
     private void ApplyChannelColor()
     {
         if (Document is null) return;
-        // Only the provenance prefix is colored; stdout text is not severity-parsed.
-        var key = IsRowSelected ? "LogSelectedText" : Channel switch { "stderr" => "LogError", "system" => "LogSystem", "stdin" => "LogInput", _ => "TerminalText" };
+        // stdout/stderr identify pipes, not severity: many services log INFO to stderr.
+        // Preserve the actual channel without implying that a running service failed.
+        var key = IsRowSelected ? "LogSelectedText" : Channel switch { "system" => "LogSystem", "stdin" => "LogInput", _ => "TerminalText" };
         foreach (var run in prefixRuns) run.SetResourceReference(ForegroundProperty, key);
         if (Document.Blocks.FirstBlock is Paragraph paragraph)
             foreach (var link in paragraph.Inlines.OfType<Hyperlink>()) link.SetResourceReference(ForegroundProperty, IsRowSelected ? "LogSelectedText" : "LogLink");
